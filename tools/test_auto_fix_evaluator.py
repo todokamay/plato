@@ -54,7 +54,7 @@ def main() -> int:
     assert target["accepted"]
     assert target["target_verdict_reached"]
 
-    p0_drop = evaluate_fix(report(60, "REWORK", p0=1), report(59.5, "REWORK", p0=0))
+    p0_drop = evaluate_fix(report(60, "REWORK", p0=1), report(60.5, "REWORK", p0=0))
     assert p0_drop["accepted"]
     assert p0_drop["P0_decreased"]
 
