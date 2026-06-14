@@ -393,11 +393,35 @@ select {
   color: var(--muted);
 }
 
+.operator-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.operator-step {
+  margin-top: 0;
+}
+
+.operator-result {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.operator-tail {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
   .metric-grid,
   .score-grid,
   .verdict-grid,
-  .split {
+  .split,
+  .operator-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -413,7 +437,8 @@ select {
   .metric-grid,
   .score-grid,
   .verdict-grid,
-  .split {
+  .split,
+  .operator-grid {
     grid-template-columns: 1fr;
   }
 

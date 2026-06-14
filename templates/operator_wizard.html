@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Operator Run Wizard</p>
+    <h1>Run Plato From The Browser</h1>
+  </div>
+  <div class="action-row">
+    <button id="refresh-status" type="button">Refresh Status</button>
+    <a class="button" href="/control-center">Control Center</a>
+  </div>
+</section>
+
+<section class="operator-grid">
+  <article class="panel operator-step">
+    <div class="section-title"><h2>1. Detect Outputs</h2></div>
+    <p class="muted">Find real VideoAutoPipeline MP4 output folders and prefill the input folder when possible.</p>
+    <button id="detect-outputs" class="primary" type="button">Detect VideoAutoPipeline Outputs</button>
+    <div id="detector-result" class="operator-result"></div>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>2. Select Input Folder</h2></div>
+    <label for="folder-input">Manual folder path</label>
+    <input id="folder-input" type="text" value="{{ operator.detection.recommended_input_folder or operator.suggested.manual_folder }}" placeholder="data\temp\manual_videoautopipeline_outputs">
+    <p id="folder-warning" class="muted">If no folder is found, create <code>data\temp\manual_videoautopipeline_outputs</code>, put one or more .mp4 files inside, then use that path here.</p>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>3. Dry Run</h2></div>
+    <p class="muted">Run one safe scan. This does not call ffmpeg and does not modify originals.</p>
+    <button id="dry-run" type="button">Run Dry Run</button>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>4. One-Shot Auto QC</h2></div>
+    <p class="muted">Run the existing conservative Auto QC pipeline once for the selected folder.</p>
+    <button id="auto-qc-once" type="button">Run Auto QC Once</button>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>5. Batch QC Once</h2></div>
+    <p class="muted">Analyze and route a folder once without starting continuous watch mode.</p>
+    <button id="batch-qc-once" type="button">Run Batch QC Once</button>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>6. Continuous Watch Mode</h2></div>
+    <p class="muted">Start or stop one background watcher for the selected folder.</p>
+    <div class="action-row">
+      <button id="watch-start" type="button">Start Watch Mode</button>
+      <button id="watch-stop" type="button">Stop Watch Mode</button>
+    </div>
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Latest Status</h2></div>
+    <dl class="meta">
+      <dt>Watch mode</dt><dd id="watch-status">-</dd>
+      <dt>Queue size</dt><dd id="queue-size">-</dd>
+      <dt>Current job</dt><dd id="current-job">-</dd>
+      <dt>Last job</dt><dd id="last-job">-</dd>
+    </dl>
+    <div id="result-summary" class="operator-result muted"></div>
+  </article>
+
+  <article class="panel">
+    <div class="section-title"><h2>Latest Logs</h2></div>
+    <dl class="meta">
+      <dt>stdout</dt><dd><pre id="stdout-tail" class="operator-tail">-</pre></dd>
+      <dt>stderr</dt><dd><pre id="stderr-tail" class="operator-tail">-</pre></dd>
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Jobs</h2><a href="/api/operator/jobs">JSON</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Created</th><th>Type</th><th>Status</th><th>Command</th></tr></thead>
+      <tbody id="jobs-body">
+        <tr><td colspan="4">No jobs yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Safety Notes</h2></div>
+  <ul class="plain-list">
+    <li>Browser actions use predefined Plato commands only.</li>
+    <li>No arbitrary shell command input is accepted.</li>
+    <li>Original MP4 files are never modified, moved, deleted, or overwritten.</li>
+    <li>Auto QC writes fixed outputs, reports, logs, and state files under <code>data/</code>.</li>
+  </ul>
+</section>
+
+<script>
+const folderInput = document.getElementById("folder-input");
+const folderWarning = document.getElementById("folder-warning");
+const detectorResult = document.getElementById("detector-result");
+const jobsBody = document.getElementById("jobs-body");
+const stdoutTail = document.getElementById("stdout-tail");
+const stderrTail = document.getElementById("stderr-tail");
+const watchStatus = document.getElementById("watch-status");
+const queueSize = document.getElementById("queue-size");
+const currentJob = document.getElementById("current-job");
+const lastJob = document.getElementById("last-job");
+const resultSummary = document.getElementById("result-summary");
+const buttons = {
+  detect: document.getElementById("detect-outputs"),
+  dryRun: document.getElementById("dry-run"),
+  autoQc: document.getElementById("auto-qc-once"),
+  batchQc: document.getElementById("batch-qc-once"),
+  watchStart: document.getElementById("watch-start"),
+  watchStop: document.getElementById("watch-stop"),
+  refresh: document.getElementById("refresh-status"),
+};
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  }[char]));
+}
+
+async function postJson(url, body = {}) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  });
+  return response.json();
+}
+
+function folderPayload() {
+  return {folder: folderInput.value.trim()};
+}
+
+function setBusy(running) {
+  buttons.autoQc.disabled = running;
+  buttons.batchQc.disabled = running;
+  buttons.watchStart.disabled = running;
+  buttons.dryRun.disabled = running;
+}
+
+function showActionResult(payload) {
+  if (!payload.ok) {
+    folderWarning.textContent = payload.error || "Action could not start.";
+    folderWarning.className = "alert";
+    return;
+  }
+  folderWarning.className = "muted";
+  const warnings = payload.warnings || [];
+  folderWarning.textContent = warnings.length ? warnings.join(" ") : "Action started.";
+}
+
+async function refreshStatus() {
+  const status = await fetch("/api/operator/status").then((response) => response.json());
+  const jobs = await fetch("/api/operator/jobs").then((response) => response.json());
+  const state = status.jobs || {};
+  const watch = state.watch_mode || {};
+  const current = state.current_job || null;
+  const last = state.last_job || null;
+  const queue = status.queue || {};
+  watchStatus.textContent = watch.running ? "running" : "stopped";
+  queueSize.textContent = queue.total ?? 0;
+  currentJob.textContent = current ? `${current.job_type} (${current.status})` : "-";
+  lastJob.textContent = last ? `${last.job_type} (${last.status})` : "-";
+  stdoutTail.textContent = (last && last.stdout_tail) || "-";
+  stderrTail.textContent = (last && last.stderr_tail) || "-";
+  resultSummary.textContent = last && last.result_summary ? JSON.stringify(last.result_summary) : "";
+  setBusy(Boolean(current));
+
+  const rows = (jobs.jobs || []).map((job) => `
+    <tr>
+      <td>${escapeHtml(job.created_at)}</td>
+      <td>${escapeHtml(job.job_type)}</td>
+      <td><span class="status">${escapeHtml(job.status)}</span></td>
+      <td class="path-text">${escapeHtml(job.command)}</td>
+    </tr>
+  `).join("");
+  jobsBody.innerHTML = rows || '<tr><td colspan="4">No jobs yet.</td></tr>';
+
+  const detection = status.detection || {};
+  if (detection.recommended_input_folder && !folderInput.value.trim()) {
+    folderInput.value = detection.recommended_input_folder;
+  }
+}
+
+buttons.detect.addEventListener("click", async () => {
+  const payload = await postJson("/api/operator/detect");
+  if (payload.detection && payload.detection.recommended_input_folder) {
+    folderInput.value = payload.detection.recommended_input_folder;
+    detectorResult.textContent = `Recommended: ${payload.detection.recommended_input_folder}`;
+  } else {
+    detectorResult.textContent = "No output folder found. Use data\\temp\\manual_videoautopipeline_outputs.";
+  }
+  showActionResult(payload);
+  refreshStatus();
+});
+
+buttons.dryRun.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/dry-run"));
+  refreshStatus();
+});
+buttons.autoQc.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/auto-qc-once", folderPayload()));
+  refreshStatus();
+});
+buttons.batchQc.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/batch-qc-once", folderPayload()));
+  refreshStatus();
+});
+buttons.watchStart.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/watch/start", folderPayload()));
+  refreshStatus();
+});
+buttons.watchStop.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/watch/stop"));
+  refreshStatus();
+});
+buttons.refresh.addEventListener("click", refreshStatus);
+
+refreshStatus();
+setInterval(refreshStatus, 3000);
+</script>
+{% endblock %}

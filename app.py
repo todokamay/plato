@@ -24,6 +24,7 @@ from modules.batch_qc import recent_batches
 from modules.history_engine import history_summary
 from modules.log_center import recent_logs
 from modules.orchestrator import orchestrator_status
+from modules.operator_actions import operator_status as operator_wizard_status
 from modules.pipeline import analyze_clip
 from modules.queue_engine import queue_stats
 from modules.report_center import report_payload
@@ -181,6 +182,18 @@ def control_center_page(request: Request):
             "watch_state": load_state(DEFAULT_STATE_FILE),
             "detector": detect_videoautopipeline_outputs(),
             "latest_run": runs[0] if runs else None,
+        },
+    )
+
+
+@app.get("/operator")
+def operator_page(request: Request):
+    return templates.TemplateResponse(
+        "operator_wizard.html",
+        {
+            "request": request,
+            "title": "Operator",
+            "operator": operator_wizard_status(),
         },
     )
 

@@ -17,6 +17,7 @@ Open:
 
 - `http://127.0.0.1:8000/` dashboard
 - `http://127.0.0.1:8000/control-center` Factory OS Control Center
+- `http://127.0.0.1:8000/operator` Operator Run Wizard
 - `http://127.0.0.1:8000/upload` upload/analyze workflow
 - `http://127.0.0.1:8000/clips` clip list
 - `http://127.0.0.1:8000/batch-qc` latest batch QC dashboard
@@ -53,6 +54,36 @@ Smoke-check the local Factory OS:
 ```powershell
 py tools\smoke_factory_run.py --skip-tests
 ```
+
+## Operator Wizard
+
+The Operator Run Wizard lets you run common factory tasks from the browser without copying PowerShell commands.
+
+Open:
+
+```text
+http://127.0.0.1:8000/operator
+```
+
+The wizard can:
+
+- detect VideoAutoPipeline output folders and prefill the input path
+- accept a manual folder path such as `data\temp\manual_videoautopipeline_outputs`
+- run a dry-run validation
+- run one-shot Auto QC for a selected folder
+- run one-shot Batch QC for a selected folder
+- start and stop one continuous watcher
+- show job status, stdout/stderr tails, queue size, and next steps
+
+If no generated output folder is found, create:
+
+```text
+data\temp\manual_videoautopipeline_outputs
+```
+
+Put one or more `.mp4` files inside, then use that path in the manual folder input.
+
+The browser UI only runs predefined Plato actions. It does not accept arbitrary shell commands.
 
 ## CLI Tools
 
@@ -104,6 +135,8 @@ py tools\run_full_validation.py
 - Original files are not moved, deleted, or overwritten.
 - Fixed outputs are written as new MP4 files under run output folders.
 - Result folders receive copies only when `--copy-results` is used.
+- Operator Wizard jobs use `subprocess` with `shell=False` and a strict allow-list of Plato commands.
+- Browser users cannot run custom shell commands.
 - No DaVinci Resolve automation or scripting in v1.0.1.
 - No auto-publishing.
 - No virality prediction; scores and lifts are deterministic formula estimates, not historical performance forecasts.
