@@ -59,10 +59,12 @@ def main() -> int:
         print("Watch stopped by user.", file=sys.stderr)
         return 130
     except Exception as exc:
+        fallback = r"py tools\watch_videoautopipeline_outputs.py PATH --once --dry-run"
         if args.json:
-            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+            print(json.dumps({"ok": False, "error": str(exc), "suggested_command": fallback}, ensure_ascii=False, indent=2))
         else:
             print(f"ERROR: {exc}", file=sys.stderr)
+            print(f"Suggested next command: {fallback}", file=sys.stderr)
         return 1
 
     payload = {"ok": True, "watch_folder": str(watch_folder.resolve()), "detection": detection, "cycles": cycles}
@@ -77,6 +79,8 @@ def main() -> int:
             "cycle: {cycle_id} detected={detected_count} stable={stable_count} "
             "processed={processed_count} skipped={skipped_count} failed={failed_count} run_id={auto_qc_run_id}".format(**cycle)
         )
+        if cycle.get("detected_count") == 0:
+            print("No MP4 files found yet. Leave the watcher running or drop an MP4 into the watch folder.")
     return 0
 
 

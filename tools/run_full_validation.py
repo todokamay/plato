@@ -25,6 +25,7 @@ def main() -> int:
         ("unit", [sys.executable, "tools/run_tests.py"]),
         ("orchestrator", [sys.executable, "tools/run_orchestrator.py", "--once", "--json"]),
         ("watch", [sys.executable, "tools/watch_videoautopipeline_outputs.py", "data/temp", "--once", "--dry-run", "--stable-seconds", "0", "--json"]),
+        ("smoke", [sys.executable, "tools/smoke_factory_run.py", "--skip-tests"]),
     ]
     results = [run_step(label, args) for label, args in steps]
     failed = [item for item in results if item["status"] == "FAIL"]

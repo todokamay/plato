@@ -30,14 +30,25 @@
   </article>
 </section>
 
+<section class="panel">
+  <div class="section-title"><h2>How To Start</h2></div>
+  <pre class="command-block">py tools\run_orchestrator.py --once --dry-run
+
+py tools\run_orchestrator.py --detect-videoautopipeline-outputs --watch --auto-fix --copy-results --allow-original-short --short-clip-min-duration 5</pre>
+</section>
+
 <section class="split">
   <article class="panel">
     <div class="section-title"><h2>Queue</h2><a href="/api/queue">JSON</a></div>
-    <dl class="meta">
-      {% for state, count in queue.counts.items() %}
-        <dt>{{ state }}</dt><dd>{{ count }}</dd>
-      {% endfor %}
-    </dl>
+    {% if queue.total %}
+      <dl class="meta">
+        {% for state, count in queue.counts.items() %}
+          <dt>{{ state }}</dt><dd>{{ count }}</dd>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p class="muted">No queue yet. Run a dry-run scan to discover exports and seed queue state.</p>
+    {% endif %}
   </article>
   <article class="panel">
     <div class="section-title"><h2>Health</h2><a href="/api/health">JSON</a></div>
@@ -47,6 +58,32 @@
       <dt>CPU</dt><dd>{{ status.health.cpu.state }}</dd>
       <dt>RAM</dt><dd>{{ status.health.ram.state }}</dd>
     </dl>
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Watch State</h2></div>
+    {% if watch_state.files %}
+      <dl class="meta">
+        <dt>Tracked files</dt><dd>{{ watch_state.files|length }}</dd>
+        <dt>State file</dt><dd>{{ status.health.watch.state_file if status.health.watch.state_file else "data/watch_state/watch_state.json" }}</dd>
+      </dl>
+    {% else %}
+      <p class="muted">No watch state yet. The watcher will create it on the first scan.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Detector</h2></div>
+    {% if detector.found %}
+      <dl class="meta">
+        <dt>Recommended</dt><dd class="path-text">{{ detector.recommended_input_folder }}</dd>
+        <dt>Candidates</dt><dd>{{ detector.candidates|length }}</dd>
+      </dl>
+    {% else %}
+      <p class="muted">No VideoAutoPipeline MP4 output folder detected yet.</p>
+      <pre class="command-block">py tools\detect_videoautopipeline_outputs.py</pre>
+    {% endif %}
   </article>
 </section>
 
@@ -77,9 +114,40 @@
 </section>
 
 <section class="panel">
+  <div class="section-title"><h2>Latest Run</h2><a href="/api/runs">JSON</a></div>
+  {% if latest_run %}
+    <dl class="meta">
+      <dt>Run ID</dt><dd>{{ latest_run.run_id }}</dd>
+      <dt>Scanned</dt><dd>{{ latest_run.counts.scanned_count }}</dd>
+      <dt>Accepted fixes</dt><dd>{{ latest_run.counts.accepted_fix_count }}</dd>
+    </dl>
+  {% else %}
+    <p class="muted">No latest run yet. Start with a dry run, then enable auto-fix once the detected folder looks right.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Logs</h2></div>
+  {% if logs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+        <tbody>
+          {% for item in logs %}
+            <tr><td>{{ item.created_at }}</td><td>{{ item.level }}</td><td>{{ item.source }}</td><td>{{ item.message }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No logs yet. Orchestrator and smoke runs will write operator logs under data/logs.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
   <div class="section-title"><h2>Factory Commands</h2></div>
-  <pre class="command-block">py tools\run_orchestrator.py --once
-py tools\watch_videoautopipeline_outputs.py --detect-videoautopipeline-outputs --auto-fix --copy-results
-py tools\run_full_validation.py</pre>
+  <pre class="command-block">py tools\run_orchestrator.py --status-only
+py tools\run_orchestrator.py --once --dry-run
+py tools\smoke_factory_run.py --skip-tests</pre>
 </section>
 {% endblock %}

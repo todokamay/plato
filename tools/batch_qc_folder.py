@@ -46,19 +46,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Show what would happen without analysis/copy/export.")
     args = parser.parse_args(argv)
 
-    payload = run_batch_qc(
-        args.folder,
-        force=args.force,
-        recursive=args.recursive,
-        copy_results=args.copy_results,
-        output_dir=args.output_dir,
-        limit=args.limit,
-        dry_run=args.dry_run,
-    )
+    try:
+        payload = run_batch_qc(
+            args.folder,
+            force=args.force,
+            recursive=args.recursive,
+            copy_results=args.copy_results,
+            output_dir=args.output_dir,
+            limit=args.limit,
+            dry_run=args.dry_run,
+        )
+    except Exception as exc:
+        fallback = r"py tools\batch_qc_folder.py PATH --dry-run"
+        if args.json:
+            print(json.dumps({"ok": False, "error": str(exc), "suggested_command": fallback}, ensure_ascii=False, indent=2))
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            print(f"Suggested next command: {fallback}", file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         _print_text(payload)
+        if (payload.get("counts") or {}).get("scanned_count") == 0:
+            print("No MP4/MOV/MKV/WebM files found. Try --recursive or point to the export folder.")
     return 0
 
 

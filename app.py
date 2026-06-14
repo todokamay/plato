@@ -22,11 +22,14 @@ from modules import db
 from modules.auto_qc import recent_auto_qc_runs
 from modules.batch_qc import recent_batches
 from modules.history_engine import history_summary
+from modules.log_center import recent_logs
 from modules.orchestrator import orchestrator_status
 from modules.pipeline import analyze_clip
 from modules.queue_engine import queue_stats
 from modules.report_center import report_payload
+from modules.videoautopipeline_detector import detect_videoautopipeline_outputs
 from modules.video_probe import probe_video
+from modules.watch_folder import DEFAULT_STATE_FILE, load_state
 from routes.api import router as api_router
 
 ensure_data_dirs()
@@ -164,6 +167,7 @@ def auto_qc_page(request: Request):
 
 @app.get("/control-center")
 def control_center_page(request: Request):
+    runs = recent_auto_qc_runs()
     return templates.TemplateResponse(
         "control_center.html",
         {
@@ -173,6 +177,10 @@ def control_center_page(request: Request):
             "queue": queue_stats(),
             "report": report_payload("all-time"),
             "history": history_summary(),
+            "logs": recent_logs(limit=20),
+            "watch_state": load_state(DEFAULT_STATE_FILE),
+            "detector": detect_videoautopipeline_outputs(),
+            "latest_run": runs[0] if runs else None,
         },
     )
 

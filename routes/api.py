@@ -12,26 +12,33 @@ from modules.report_center import report_payload
 router = APIRouter(prefix="/api")
 
 
+def _safe_payload(factory, fallback: dict) -> dict:
+    try:
+        return factory()
+    except Exception as exc:
+        return {**fallback, "ok": False, "error": str(exc)}
+
+
 @router.get("/status")
 def api_status():
-    return orchestrator_status()
+    return _safe_payload(orchestrator_status, {"orchestrator_state": "degraded", "health": {}})
 
 
 @router.get("/runs")
 def api_runs():
-    return report_payload("all-time")
+    return _safe_payload(lambda: report_payload("all-time"), {"view": "all-time", "counts": {}, "runs": []})
 
 
 @router.get("/queue")
 def api_queue():
-    return queue_stats()
+    return _safe_payload(queue_stats, {"total": 0, "counts": {}, "items": []})
 
 
 @router.get("/health")
 def api_health():
-    return system_health()
+    return _safe_payload(system_health, {"state": "warning"})
 
 
 @router.get("/history")
 def api_history():
-    return {"summary": history_summary(), "entries": history_entries(limit=100)}
+    return _safe_payload(lambda: {"summary": history_summary(), "entries": history_entries(limit=100)}, {"summary": {}, "entries": []})

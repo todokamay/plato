@@ -60,6 +60,7 @@ def main() -> int:
             return 1
     elif not input_folder:
         print("ERROR: input_folder is required unless --detect-videoautopipeline-outputs is used.", file=sys.stderr)
+        print(r"Suggested next command: py tools\auto_qc_fix_folder.py PATH --dry-run", file=sys.stderr)
         return 1
 
     try:
@@ -86,10 +87,12 @@ def main() -> int:
         if detection is not None:
             payload["detected_videoautopipeline_outputs"] = detection
     except Exception as exc:
+        fallback = r"py tools\auto_qc_fix_folder.py PATH --dry-run"
         if args.json:
-            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+            print(json.dumps({"ok": False, "error": str(exc), "suggested_command": fallback}, ensure_ascii=False, indent=2))
         else:
             print(f"ERROR: {exc}", file=sys.stderr)
+            print(f"Suggested next command: {fallback}", file=sys.stderr)
         return 1
 
     if args.json:
@@ -106,6 +109,8 @@ def main() -> int:
     print(f"accepted_fix_count: {counts.get('accepted_fix_count')}")
     print(f"rejected_fix_count: {counts.get('rejected_fix_count')}")
     print(f"failed_count: {counts.get('failed_count')}")
+    if counts.get("scanned_count") == 0:
+        print("No MP4/MOV/MKV/WebM files found. Try --recursive or point to the export folder.")
     if detection is not None:
         print(f"detected_recommended_input_folder: {detection.get('recommended_input_folder')}")
     if paths:
