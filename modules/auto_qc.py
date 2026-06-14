@@ -54,6 +54,16 @@ RUN_COLUMNS = [
     "fixed_adjusted_score",
     "fixed_final_verdict",
     "delta_score",
+    "duration_policy",
+    "original_duration_sec",
+    "fixed_duration_sec",
+    "duration_delta_sec",
+    "duration_loss_ratio",
+    "is_original_short",
+    "min_duration_used",
+    "duration_acceptance_reason",
+    "fix_acceptance_reason",
+    "fix_rejection_reason",
     "verdict_improved",
     "fix_accepted",
     "final_output_path",
@@ -146,6 +156,24 @@ def _top_issue(report_data: dict | None) -> str:
     return point.get("description") or point.get("issue_type") or point.get("action") or ""
 
 
+def _report_duration(report_data: dict | None) -> float:
+    if not report_data:
+        return 0.0
+    overview = report_data.get("asset_overview") or {}
+    metadata = (report_data.get("technical_quality") or {}).get("metadata") or {}
+    return _as_float(overview.get("duration"), _as_float(metadata.get("duration"), 0.0))
+
+
+def _min_duration_for_clip(report_data: dict | None, options: dict) -> float:
+    min_duration = _as_float(options.get("min_duration"), 8.0)
+    short_clip_min_duration = _as_float(options.get("short_clip_min_duration"), 5.0)
+    ultra_short_threshold = _as_float(options.get("ultra_short_threshold"), 8.0)
+    duration = _report_duration(report_data)
+    if options.get("allow_original_short") and duration and duration < min_duration and duration < ultra_short_threshold:
+        return short_clip_min_duration
+    return min_duration
+
+
 def _fix_lift(fix: dict) -> float:
     return _as_float((fix.get("expected_lift") or {}).get("investment"), 0.0)
 
@@ -208,8 +236,12 @@ def _html(payload: dict) -> str:
           <td>{clip.get('fixed_adjusted_score', '')}</td>
           <td>{clip.get('fixed_final_verdict', '')}</td>
           <td>{clip.get('delta_score', '')}</td>
+          <td>{clip.get('duration_policy', '')}</td>
+          <td>{clip.get('original_duration_sec', '')}</td>
+          <td>{clip.get('fixed_duration_sec', '')}</td>
+          <td>{clip.get('duration_loss_ratio', '')}</td>
           <td>{clip.get('final_bucket', '')}</td>
-          <td>{clip.get('failure_reason', '')}</td>
+          <td>{clip.get('fix_acceptance_reason') or clip.get('fix_rejection_reason') or clip.get('failure_reason', '')}</td>
         </tr>
         """
         for clip in payload.get("clips", [])
@@ -219,7 +251,7 @@ def _html(payload: dict) -> str:
         for bucket in FINAL_BUCKETS
     )
     accepted = "\n".join(
-        f"<li>{clip.get('filename')}: {clip.get('delta_score')} points, {clip.get('fixed_final_verdict')}</li>"
+        f"<li>{clip.get('filename')}: {clip.get('delta_score')} points, {clip.get('fixed_final_verdict')} - {clip.get('fix_acceptance_reason')}</li>"
         for clip in payload.get("accepted_fixes", [])
     ) or "<li>No accepted fixes.</li>"
     failed = "\n".join(
@@ -254,7 +286,7 @@ def _html(payload: dict) -> str:
   <section>
     <h2>Full Table</h2>
     <table>
-      <thead><tr><th>Rank</th><th>Filename</th><th>Before</th><th>Original Verdict</th><th>Original Bucket</th><th>Allowed</th><th>Attempted</th><th>Accepted</th><th>After</th><th>Fixed Verdict</th><th>Delta</th><th>Final Bucket</th><th>Reason</th></tr></thead>
+      <thead><tr><th>Rank</th><th>Filename</th><th>Before</th><th>Original Verdict</th><th>Original Bucket</th><th>Allowed</th><th>Attempted</th><th>Accepted</th><th>After</th><th>Fixed Verdict</th><th>Delta</th><th>Duration Policy</th><th>Original Sec</th><th>Fixed Sec</th><th>Loss Ratio</th><th>Final Bucket</th><th>Reason</th></tr></thead>
       <tbody>{rows}</tbody>
     </table>
   </section>
@@ -374,6 +406,11 @@ def run_auto_qc_fix(
     max_fixes_per_clip: int = 3,
     min_improvement: float = 2.0,
     target_verdict: str = "SAFE TO TEST",
+    min_duration: float = 8.0,
+    short_clip_min_duration: float = 5.0,
+    ultra_short_threshold: float = 8.0,
+    max_duration_loss_ratio: float = 0.15,
+    allow_original_short: bool = False,
     keep_temp: bool = False,
     no_copy_original_rejects: bool = False,
 ) -> dict:
@@ -395,6 +432,11 @@ def run_auto_qc_fix(
         "max_fixes_per_clip": max_fixes_per_clip,
         "min_improvement": min_improvement,
         "target_verdict": target_verdict,
+        "min_duration": min_duration,
+        "short_clip_min_duration": short_clip_min_duration,
+        "ultra_short_threshold": ultra_short_threshold,
+        "max_duration_loss_ratio": max_duration_loss_ratio,
+        "allow_original_short": allow_original_short,
         "keep_temp": keep_temp,
         "no_copy_original_rejects": no_copy_original_rejects,
     }
@@ -439,6 +481,16 @@ def run_auto_qc_fix(
             "fixed_report_path": "",
             "final_output_path": "",
             "failure_reason": "",
+            "duration_policy": "",
+            "original_duration_sec": "",
+            "fixed_duration_sec": "",
+            "duration_delta_sec": "",
+            "duration_loss_ratio": "",
+            "is_original_short": "",
+            "min_duration_used": "",
+            "duration_acceptance_reason": "",
+            "fix_acceptance_reason": "",
+            "fix_rejection_reason": "",
             "final_bucket": "debug_review",
         }
         try:
@@ -459,7 +511,8 @@ def run_auto_qc_fix(
                 }
             )
 
-            plan_options = {"max_fixes_per_clip": max_fixes_per_clip}
+            min_duration_after_cut = _min_duration_for_clip(report_data, options)
+            plan_options = {"max_fixes_per_clip": max_fixes_per_clip, "min_duration_after_cut": min_duration_after_cut}
             plan = create_auto_fix_plan(report_data, plan_options)
             plan_path = per_clip_plan_dir / f"{Path(safe_filename(source.name)).stem}_fix_plan.json"
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -478,7 +531,7 @@ def run_auto_qc_fix(
                     {
                         "keep_temp": keep_temp,
                         "max_fixes_per_clip": max_fixes_per_clip,
-                        "min_duration_after_cut": 8.0,
+                        "min_duration_after_cut": min_duration_after_cut,
                     },
                 )
                 row["fixes_applied"] = ",".join(exec_result.get("strategies") or [fix.get("ffmpeg_strategy", "") for fix in plan.get("fixes", [])])
@@ -502,7 +555,11 @@ def run_auto_qc_fix(
                     {
                         "min_improvement": min_improvement,
                         "target_verdict": target_verdict,
-                        "min_final_duration": 8.0,
+                        "min_duration": min_duration,
+                        "short_clip_min_duration": short_clip_min_duration,
+                        "ultra_short_threshold": ultra_short_threshold,
+                        "max_duration_loss_ratio": max_duration_loss_ratio,
+                        "allow_original_short": allow_original_short,
                     },
                 )
                 row.update(
@@ -511,6 +568,16 @@ def run_auto_qc_fix(
                         "fixed_adjusted_score": fixed_metrics.get("adjusted_score"),
                         "fixed_final_verdict": fixed_metrics.get("final_verdict"),
                         "delta_score": evaluation.get("delta_score"),
+                        "duration_policy": evaluation.get("duration_policy"),
+                        "original_duration_sec": evaluation.get("original_duration_sec"),
+                        "fixed_duration_sec": evaluation.get("fixed_duration_sec"),
+                        "duration_delta_sec": evaluation.get("duration_delta_sec"),
+                        "duration_loss_ratio": evaluation.get("duration_loss_ratio"),
+                        "is_original_short": evaluation.get("is_original_short"),
+                        "min_duration_used": evaluation.get("min_duration_used"),
+                        "duration_acceptance_reason": evaluation.get("duration_acceptance_reason"),
+                        "fix_acceptance_reason": evaluation.get("fix_acceptance_reason"),
+                        "fix_rejection_reason": evaluation.get("fix_rejection_reason"),
                         "verdict_improved": evaluation.get("verdict_improved"),
                         "fix_accepted": evaluation.get("accepted"),
                         "P0_after": fixed_metrics.get("P0_count"),
@@ -526,6 +593,7 @@ def run_auto_qc_fix(
                     log_lines.append(f"{source.name}: accepted fix: {evaluation.get('reason')}")
                 else:
                     row["failure_reason"] = evaluation.get("reason") or "fixed version rejected"
+                    row["fix_rejection_reason"] = evaluation.get("fix_rejection_reason") or row["failure_reason"]
                     final_bucket = "rejected" if metrics.get("portfolio_bucket") == BUCKET_REJECT else "failed_fix"
                     row["final_bucket"] = final_bucket
                     row["final_output_path"] = _copy_final(source, output, final_bucket, copy_results)
