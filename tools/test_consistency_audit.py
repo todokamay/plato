@@ -8,28 +8,56 @@ sys.path.insert(0, str(ROOT))
 from tools.audit_score_verdict_consistency import audit_report_record, audit_reports, build_audit_payload
 
 
-def _record(raw=90, adjusted=85, final="SAFE TO TEST", penalty=5, alignment="major_gap", cap_reasons=None, include_consistency=True, report_id="report1"):
+def _record(
+    raw=87.3,
+    adjusted=78.3,
+    raw_verdict="PUBLISH",
+    cap_final="SAFE TO TEST",
+    adjusted_verdict="SAFE TO TEST",
+    final="SAFE TO TEST",
+    source="tie",
+    include_canonical=True,
+    report_id="report1",
+):
     report_json = {
         "report_id": report_id,
         "asset_overview": {"clip_id": "clip1", "filename": "sample.mp4"},
         "investment_score": adjusted,
         "raw_investment_score": raw,
+        "adjusted_investment_score": adjusted,
         "verdict": final,
-        "raw_verdict": "STRONG PUBLISH" if raw >= 90 else "PUBLISH",
+        "raw_verdict": raw_verdict,
+        "cap_final_verdict": cap_final,
+        "adjusted_score_verdict": adjusted_verdict,
+        "final_verdict": final,
+        "verdict_source": source,
+        "verdict_cap": {
+            "raw_verdict": raw_verdict,
+            "final_verdict": cap_final,
+            "cap_reasons": ["video bitrate is low at 1768 kbps"],
+        },
         "edit_points": [],
-    }
-    if include_consistency:
-        report_json["adjusted_investment_score"] = adjusted
-        report_json["scoring"] = {
+        "scoring": {
             "raw_score": raw,
             "adjusted_score": adjusted,
-            "total_consistency_penalty": penalty,
-            "raw_verdict": "STRONG PUBLISH" if raw >= 90 else "PUBLISH",
+            "total_consistency_penalty": round(max(0, raw - adjusted), 1),
+            "raw_verdict": raw_verdict,
+            "cap_final_verdict": cap_final,
+            "adjusted_score_verdict": adjusted_verdict,
             "final_verdict": final,
-            "score_verdict_alignment": alignment,
+            "verdict_source": source,
+            "score_verdict_alignment": "aligned" if final == adjusted_verdict else "cap_limited",
             "consistency_penalties": [],
-            "cap_reasons": cap_reasons if cap_reasons is not None else ["video bitrate is low at 1768 kbps"],
-        }
+            "cap_reasons": ["video bitrate is low at 1768 kbps"],
+        },
+    }
+    if not include_canonical:
+        report_json.pop("cap_final_verdict", None)
+        report_json.pop("adjusted_score_verdict", None)
+        report_json.pop("final_verdict", None)
+        report_json.pop("verdict_source", None)
+        for field in ["cap_final_verdict", "adjusted_score_verdict", "final_verdict", "verdict_source"]:
+            report_json["scoring"].pop(field, None)
     return {
         "report_id": report_id,
         "clip_id": "clip1",
@@ -39,42 +67,56 @@ def _record(raw=90, adjusted=85, final="SAFE TO TEST", penalty=5, alignment="maj
 
 
 def main() -> int:
-    confusing = audit_report_record(_record(raw=90, adjusted=85, final="SAFE TO TEST", alignment="major_gap"))
-    assert confusing["needs_review"] is True
-    assert any("adjusted remains >=80" in flag for flag in confusing["flags"])
-
-    aligned = audit_report_record(_record(raw=90, adjusted=78, final="SAFE TO TEST", penalty=12, alignment="aligned"))
+    aligned = audit_report_record(_record(report_id="ok"))
+    assert aligned["status"] == "ok"
     assert aligned["needs_review"] is False
+    assert aligned["old_schema"] is False
 
-    tiny_penalty = audit_report_record(_record(raw=88, adjusted=87.5, final="SAFE TO TEST", penalty=0.5, alignment="major_gap"))
-    assert tiny_penalty["needs_review"] is True
-    assert any("total penalty <2" in flag for flag in tiny_penalty["flags"])
+    mismatch = audit_report_record(
+        _record(
+            adjusted=77,
+            cap_final="PUBLISH",
+            adjusted_verdict="SAFE TO TEST",
+            final="PUBLISH",
+            source="cap",
+            report_id="mismatch",
+        )
+    )
+    assert mismatch["status"] == "needs_review"
+    assert any("more_conservative" in flag for flag in mismatch["flags"])
 
-    legacy = audit_report_record(_record(raw=88, adjusted=88, final="SAFE TO TEST", penalty=0, alignment="major_gap", include_consistency=False))
+    partial_record = _record(report_id="partial")
+    partial_record["report_json"]["scoring"].pop("cap_final_verdict")
+    partial = audit_report_record(partial_record)
+    assert partial["status"] == "needs_review"
+    assert any("missing cap_final_verdict" in flag for flag in partial["flags"])
+
+    legacy = audit_report_record(_record(include_canonical=False, report_id="legacy"))
     assert legacy["status"] == "pending_reanalysis"
     assert legacy["needs_review"] is False
-
-    cap_only = audit_report_record(_record(raw=91, adjusted=91, final="PUBLISH", penalty=0, alignment="cap_only_gap"))
-    assert cap_only["status"] == "needs_review"
-    assert any("zero consistency penalty" in flag for flag in cap_only["flags"])
+    assert legacy["old_schema"] is True
+    assert legacy["needs_reanalysis"] is True
 
     results = audit_reports(
         [
-            _record(raw=90, adjusted=78, final="SAFE TO TEST", penalty=12, alignment="aligned_with_penalty", report_id="ok"),
-            _record(raw=88, adjusted=88, final="SAFE TO TEST", penalty=0, alignment="major_gap", include_consistency=False, report_id="legacy"),
-            _record(raw=91, adjusted=91, final="PUBLISH", penalty=0, alignment="cap_only_gap", report_id="cap_only"),
+            _record(report_id="ok"),
+            _record(include_canonical=False, report_id="legacy"),
+            _record(
+                adjusted=77,
+                cap_final="PUBLISH",
+                adjusted_verdict="SAFE TO TEST",
+                final="PUBLISH",
+                source="cap",
+                report_id="mismatch",
+            ),
         ]
     )
-    audit_payload = build_audit_payload(results)
-    assert "pending_reanalysis" in audit_payload
-    assert "needs_review" in audit_payload
-    pending_ids = {item["report_id"] for item in audit_payload["pending_reanalysis"]}
-    review_ids = {item["report_id"] for item in audit_payload["needs_review"]}
-    assert pending_ids.isdisjoint(review_ids)
-    assert len(audit_payload["pending_reanalysis"]) == 1
-    assert len(audit_payload["needs_review"]) == 1
+    payload = build_audit_payload(results)
+    assert len(payload["ok"]) == 1
+    assert len(payload["pending_reanalysis"]) == 1
+    assert len(payload["needs_review"]) == 1
+    assert payload["pending_reanalysis"][0]["old_schema"] is True
 
-    payload = build_audit_payload(audit_reports([_record(raw=90, adjusted=78, final="SAFE TO TEST", penalty=12, alignment="aligned_with_penalty")]))
     encoded = json.dumps(payload, ensure_ascii=False)
     assert "sample.mp4" in encoded
     assert "Traceback" not in encoded

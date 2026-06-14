@@ -3,6 +3,7 @@
 {% set scoring = report_data.scoring if report_data and report_data.scoring is defined and report_data.scoring else {} %}
 {% set scoring_penalties = scoring.consistency_penalties if scoring.consistency_penalties is defined else [] %}
 {% set scoring_cap_reasons = scoring.cap_reasons if scoring.cap_reasons is defined else [] %}
+{% set verdict_source = scoring.verdict_source if scoring.verdict_source is defined else report_data.verdict_source if report_data and report_data.verdict_source is defined else "" %}
 <section class="page-head">
   <div>
     <p class="eyebrow">Clip</p>
@@ -29,7 +30,7 @@
       <p class="score-line">{{ report.investment_score|round(1) }}/100</p>
       <p><span class="badge {{ report.verdict|verdict_class }}">{{ report.verdict }}</span></p>
       {% if scoring %}
-        <p class="muted">Raw score: {{ scoring.raw_score }} | Adjusted by: -{{ scoring.total_consistency_penalty }}</p>
+        <p class="muted">Raw score: {{ scoring.raw_score }} | Cap: {{ scoring.cap_final_verdict if scoring.cap_final_verdict is defined else "-" }} | Adjusted-score verdict: {{ scoring.adjusted_score_verdict if scoring.adjusted_score_verdict is defined else "-" }}</p>
       {% endif %}
       {% if report_data and report_data.verdict_cap %}
         {% if report_data.verdict_cap.applied %}
@@ -68,12 +69,24 @@
     <dl class="meta">
       <dt>Adjusted score</dt><dd>{{ scoring.adjusted_score if scoring.adjusted_score is defined else report.investment_score }}</dd>
       <dt>Raw score</dt><dd>{{ scoring.raw_score if scoring.raw_score is defined else report_data.raw_investment_score }}</dd>
-      <dt>Adjusted by</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
+      <dt>Total adjustment</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
+      <dt>Raw verdict</dt><dd>{{ scoring.raw_verdict if scoring.raw_verdict is defined else report_data.raw_verdict if report_data.raw_verdict is defined else "-" }}</dd>
+      <dt>Cap verdict</dt><dd>{{ scoring.cap_final_verdict if scoring.cap_final_verdict is defined else report_data.cap_final_verdict if report_data.cap_final_verdict is defined else "-" }}</dd>
+      <dt>Adjusted-score verdict</dt><dd>{{ scoring.adjusted_score_verdict if scoring.adjusted_score_verdict is defined else report_data.adjusted_score_verdict if report_data.adjusted_score_verdict is defined else "-" }}</dd>
+      <dt>Final verdict</dt><dd>{{ scoring.final_verdict if scoring.final_verdict is defined else report_data.verdict }}</dd>
+      <dt>Verdict source</dt><dd>{{ verdict_source or "-" }}</dd>
       <dt>Alignment</dt><dd>{{ scoring.score_verdict_alignment if scoring.score_verdict_alignment is defined else "aligned" }}</dd>
     </dl>
     <p class="muted">Adjusted score is formula-based and uses deterministic cap/edit evidence.</p>
-    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_only_gap" %}
-      <p class="alert">Raw and final verdict differ because of a hard verdict cap, but no consistency penalty was applied{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
+    {% if verdict_source == "adjusted_score" %}
+      <p class="muted">Final verdict was downgraded because adjusted score falls into a lower verdict band.</p>
+    {% elif verdict_source == "cap" %}
+      <p class="muted">Final verdict is limited by hard cap reasons.</p>
+    {% elif verdict_source == "tie" %}
+      <p class="muted">Cap verdict and adjusted-score verdict agree.</p>
+    {% endif %}
+    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_limited" %}
+      <p class="alert">Final verdict is limited by hard cap reasons{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
     {% endif %}
     {% if scoring.consistency_penalty_capped is defined and scoring.consistency_penalty_capped %}
       <p class="alert">Penalty capped at raw score; adjusted score floored at 0.</p>

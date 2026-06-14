@@ -5,6 +5,7 @@
 {% set penalties = scoring.consistency_penalties if scoring.consistency_penalties is defined else [] %}
 {% set scoring_cap_reasons = scoring.cap_reasons if scoring.cap_reasons is defined else [] %}
 {% set cap_parameters = data.cap_evaluation_parameters if data.cap_evaluation_parameters is defined else [] %}
+{% set verdict_source = scoring.verdict_source if scoring.verdict_source is defined else data.verdict_source if data.verdict_source is defined else "" %}
 <section class="report-hero">
   <div>
     <p class="eyebrow">Investment report</p>
@@ -28,14 +29,24 @@
     <dl class="meta">
       <dt>Adjusted score</dt><dd>{{ scoring.adjusted_score if scoring.adjusted_score is defined else data.investment_score }}</dd>
       <dt>Raw score</dt><dd>{{ scoring.raw_score if scoring.raw_score is defined else data.raw_investment_score }}</dd>
-      <dt>Adjusted by</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
+      <dt>Total adjustment</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
       <dt>Raw verdict</dt><dd>{{ scoring.raw_verdict if scoring.raw_verdict is defined else data.raw_verdict }}</dd>
+      <dt>Cap verdict</dt><dd>{{ scoring.cap_final_verdict if scoring.cap_final_verdict is defined else data.cap_final_verdict if data.cap_final_verdict is defined else "-" }}</dd>
+      <dt>Adjusted-score verdict</dt><dd>{{ scoring.adjusted_score_verdict if scoring.adjusted_score_verdict is defined else data.adjusted_score_verdict if data.adjusted_score_verdict is defined else "-" }}</dd>
       <dt>Final verdict</dt><dd>{{ scoring.final_verdict if scoring.final_verdict is defined else data.verdict }}</dd>
+      <dt>Verdict source</dt><dd>{{ verdict_source or "-" }}</dd>
       <dt>Alignment</dt><dd>{{ scoring.score_verdict_alignment if scoring.score_verdict_alignment is defined else "aligned" }}</dd>
     </dl>
-    <p class="muted">Adjusted score is designed to match final verdict. Raw score is the pre-cap weighted formula.</p>
-    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_only_gap" %}
-      <p class="alert">Raw and final verdict differ because of a hard verdict cap, but no consistency penalty was applied{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
+    <p class="muted">Adjusted score and consistency penalties are formula-based. Raw score is the pre-cap weighted formula.</p>
+    {% if verdict_source == "adjusted_score" %}
+      <p class="muted">Final verdict was downgraded because adjusted score falls into a lower verdict band.</p>
+    {% elif verdict_source == "cap" %}
+      <p class="muted">Final verdict is limited by hard cap reasons.</p>
+    {% elif verdict_source == "tie" %}
+      <p class="muted">Cap verdict and adjusted-score verdict agree.</p>
+    {% endif %}
+    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_limited" %}
+      <p class="alert">Final verdict is limited by hard cap reasons{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
     {% endif %}
     {% if scoring.consistency_penalty_capped is defined and scoring.consistency_penalty_capped %}
       <p class="alert">Penalty capped at raw score; adjusted score floored at 0.</p>
@@ -100,7 +111,7 @@
 <section class="split">
   <article class="panel">
     <div class="section-title"><h2>Verdict Cap Explanation</h2></div>
-    <p class="clip-name">Raw: {{ data.raw_verdict or data.verdict }} -> Final: {{ data.verdict }}</p>
+    <p class="clip-name">Raw: {{ data.raw_verdict or data.verdict }} -> Cap: {{ scoring.cap_final_verdict if scoring.cap_final_verdict is defined else data.cap_final_verdict if data.cap_final_verdict is defined else data.verdict }} -> Final: {{ data.verdict }}</p>
     {% if data.verdict_cap and data.verdict_cap.cap_reasons %}
       <ul class="plain-list">
         {% for reason in data.verdict_cap.cap_reasons %}

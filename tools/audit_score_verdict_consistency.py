@@ -10,7 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import DB_PATH, REPORTS_DIR, project_path
-from modules.scoring import VERDICT_RANK
+from modules.verdict_resolver import more_conservative_verdict, verdict_from_score
+
+
+CANONICAL_REQUIRED_FIELDS = ("cap_final_verdict", "adjusted_score_verdict", "verdict_source")
+CANONICAL_SCORING_FIELDS = (*CANONICAL_REQUIRED_FIELDS, "final_verdict")
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -44,17 +48,29 @@ def _parse_time(value: str | None) -> datetime | None:
 
 def _band_alignment(final_verdict: str, adjusted_score: float) -> str:
     if final_verdict == "STRONG PUBLISH":
-        return "aligned" if adjusted_score >= 90 else "major_gap"
+        if adjusted_score >= 90:
+            return "aligned"
+        return "minor_gap" if adjusted_score >= 86 else "major_gap"
     if final_verdict == "PUBLISH":
-        return "aligned" if 80 <= adjusted_score < 90 else "major_gap"
+        if 80 <= adjusted_score < 90:
+            return "aligned"
+        return "minor_gap" if 76 <= adjusted_score < 92 else "major_gap"
     if final_verdict == "SAFE TO TEST":
-        return "aligned" if 68 <= adjusted_score < 80 else "major_gap"
+        if 68 <= adjusted_score < 80:
+            return "aligned"
+        return "minor_gap" if adjusted_score < 68 else "major_gap"
     if final_verdict == "REWORK":
-        return "aligned" if 50 <= adjusted_score < 68 else "major_gap"
+        if 50 <= adjusted_score < 68:
+            return "aligned"
+        return "minor_gap" if adjusted_score < 50 else "major_gap"
     if final_verdict in {"HOLD", "HOLD / CLIP FIRST"}:
-        return "aligned" if adjusted_score < 50 else "major_gap"
+        if adjusted_score < 50:
+            return "aligned"
+        return "minor_gap" if adjusted_score < 70 else "major_gap"
     if final_verdict == "REJECT":
-        return "aligned" if adjusted_score < 35 else "major_gap"
+        if adjusted_score < 35:
+            return "aligned"
+        return "minor_gap" if adjusted_score < 50 else "major_gap"
     return "aligned"
 
 
@@ -69,10 +85,24 @@ def _has_consistency_model(data: dict, scoring: dict) -> bool:
     return "adjusted_investment_score" in data and "consistency_penalties" in scoring
 
 
+def _has_any_canonical_field(scoring: dict) -> bool:
+    return any(field in scoring for field in CANONICAL_REQUIRED_FIELDS)
+
+
+def _expected_source(cap_final_verdict: str, adjusted_score_verdict: str, final_verdict: str) -> str:
+    if cap_final_verdict == adjusted_score_verdict:
+        return "tie"
+    if final_verdict == adjusted_score_verdict:
+        return "adjusted_score"
+    return "cap"
+
+
 def audit_report_record(record: dict) -> dict:
     data = _parse_json(record.get("report_json", record))
     scoring = data.get("scoring") or {}
     has_consistency_model = _has_consistency_model(data, scoring)
+    has_any_canonical = _has_any_canonical_field(scoring)
+    old_schema = not has_consistency_model or not has_any_canonical
     raw_score = _as_float(scoring.get("raw_score", data.get("raw_investment_score", data.get("investment_score"))))
     adjusted_score = _as_float(scoring.get("adjusted_score", data.get("investment_score")))
     total_penalty = _as_float(
@@ -82,42 +112,43 @@ def audit_report_record(record: dict) -> dict:
         )
     )
     raw_verdict = scoring.get("raw_verdict") or data.get("raw_verdict") or data.get("verdict")
-    final_verdict = scoring.get("final_verdict") or data.get("verdict") or raw_verdict
+    cap_final_verdict = (
+        scoring.get("cap_final_verdict")
+        or data.get("cap_final_verdict")
+        or (data.get("verdict_cap") or {}).get("final_verdict")
+        or data.get("verdict")
+        or raw_verdict
+    )
+    adjusted_score_verdict = scoring.get("adjusted_score_verdict") or data.get("adjusted_score_verdict") or verdict_from_score(adjusted_score)
+    final_verdict = scoring.get("final_verdict") or data.get("final_verdict") or data.get("verdict") or raw_verdict
+    expected_final_verdict = more_conservative_verdict(cap_final_verdict, adjusted_score_verdict)
+    verdict_source = scoring.get("verdict_source") or data.get("verdict_source")
+    expected_verdict_source = _expected_source(cap_final_verdict, adjusted_score_verdict, expected_final_verdict)
     cap_reasons = list(scoring.get("cap_reasons") or (data.get("verdict_cap") or {}).get("cap_reasons", []))
     edit_points = list(data.get("edit_points") or [])
-    alignment = scoring.get("score_verdict_alignment") or _band_alignment(final_verdict, adjusted_score)
+    alignment = scoring.get("score_verdict_alignment") or (
+        "cap_limited" if final_verdict != adjusted_score_verdict and expected_verdict_source == "cap" else _band_alignment(final_verdict, adjusted_score)
+    )
 
-    p0_count = sum(1 for point in edit_points if point.get("priority") == "P0")
-    p1_count = sum(1 for point in edit_points if point.get("priority") == "P1")
     flags = []
+    notes = []
 
-    if has_consistency_model:
-        if raw_verdict != final_verdict and total_penalty == 0:
-            flags.append("raw verdict differs from final verdict with zero consistency penalty")
-        if alignment == "cap_only_gap":
-            flags.append("score/verdict alignment is cap_only_gap")
-        if raw_score >= 85 and final_verdict == "SAFE TO TEST" and adjusted_score >= 80:
-            flags.append("raw>=85 and final SAFE TO TEST while adjusted remains >=80")
-        if raw_score >= 80 and final_verdict == "REWORK" and adjusted_score >= 68:
-            flags.append("raw>=80 and final REWORK while adjusted remains >=68")
-        if raw_score >= 70 and final_verdict in {"HOLD", "HOLD / CLIP FIRST"} and adjusted_score >= 50:
-            flags.append("raw>=70 and final HOLD while adjusted remains >=50")
-        if cap_reasons and total_penalty < 2:
-            flags.append("cap reason exists but total penalty <2")
-        if p0_count and adjusted_score > 80:
-            flags.append("P0 edit point exists but adjusted score >80")
-        if p1_count > 2 and adjusted_score > 85:
-            flags.append("more than two P1 edit points but adjusted score >85")
-        drop = VERDICT_RANK.get(raw_verdict, 0) - VERDICT_RANK.get(final_verdict, 0)
-        if drop >= 2 and alignment not in {"aligned", "aligned_with_penalty"}:
-            flags.append("final verdict lower than raw verdict by 2+ tiers")
-        if raw_verdict != final_verdict and not cap_reasons:
-            flags.append("raw verdict differs from final verdict without cap reason")
-        if alignment == "major_gap" and not any("adjusted" in flag for flag in flags):
-            flags.append("score/verdict alignment is major_gap")
+    if old_schema:
+        flags.append("old report detected, needs reanalysis")
+        notes.append("Report predates canonical verdict fields. Re-analyze manually to migrate.")
+    else:
+        for field in CANONICAL_SCORING_FIELDS:
+            if field not in scoring:
+                flags.append(f"missing {field} in scoring object")
+        if final_verdict != expected_final_verdict:
+            flags.append(
+                "final_verdict does not equal more_conservative(cap_final_verdict, adjusted_score_verdict)"
+            )
+        if verdict_source and verdict_source != expected_verdict_source:
+            flags.append("verdict_source does not match canonical resolver source")
 
     filename = record.get("filename") or record.get("original_filename") or (data.get("asset_overview") or {}).get("filename")
-    status = "pending_reanalysis" if not has_consistency_model else ("needs_review" if flags else "ok")
+    status = "pending_reanalysis" if old_schema else ("needs_review" if flags else "ok")
     return {
         "report_id": record.get("report_id") or record.get("id") or data.get("report_id"),
         "clip_id": record.get("clip_id") or (data.get("asset_overview") or {}).get("clip_id"),
@@ -125,16 +156,23 @@ def audit_report_record(record: dict) -> dict:
         "raw_score": round(raw_score, 1),
         "adjusted_score": round(adjusted_score, 1),
         "raw_verdict": raw_verdict,
+        "cap_final_verdict": cap_final_verdict,
+        "adjusted_score_verdict": adjusted_score_verdict,
         "final_verdict": final_verdict,
+        "expected_final_verdict": expected_final_verdict,
+        "verdict_source": verdict_source,
+        "expected_verdict_source": expected_verdict_source,
         "total_penalty": round(total_penalty, 1),
         "cap_reasons": cap_reasons,
         "top_edit_points": _top_edit_points(edit_points),
         "alignment": alignment,
         "flags": flags,
         "status": status,
+        "old_schema": old_schema,
+        "needs_reanalysis": old_schema,
         "pending_reanalysis": status == "pending_reanalysis",
         "needs_review": status == "needs_review",
-        "notes": ["Report predates the score consistency model. Re-analyze to migrate."] if status == "pending_reanalysis" else [],
+        "notes": notes,
     }
 
 
@@ -203,6 +241,8 @@ def _summary(results: list[dict]) -> dict:
         "pending_reanalysis": len(split["pending_reanalysis"]),
         "needs_review": len(split["needs_review"]),
         "ok": len(split["ok"]),
+        "old_schema": sum(1 for item in results if item.get("old_schema")),
+        "minor_gap": sum(1 for item in results if item["alignment"] == "minor_gap"),
         "major_gap": sum(1 for item in results if item["alignment"] == "major_gap"),
     }
 
@@ -231,7 +271,10 @@ def _format_table(results: list[dict]) -> str:
         "raw",
         "adjusted",
         "raw verdict",
+        "cap verdict",
+        "adjusted verdict",
         "final verdict",
+        "source",
         "penalty",
         "alignment",
         "status",
@@ -245,7 +288,10 @@ def _format_table(results: list[dict]) -> str:
                 item["raw_score"],
                 item["adjusted_score"],
                 item.get("raw_verdict") or "-",
+                item.get("cap_final_verdict") or "-",
+                item.get("adjusted_score_verdict") or "-",
                 item.get("final_verdict") or "-",
+                item.get("verdict_source") or "-",
                 item["total_penalty"],
                 item.get("alignment") or "-",
                 item.get("status") or "-",
@@ -264,7 +310,7 @@ def _format_table(results: list[dict]) -> str:
         if item["needs_review"]:
             details.append(f"- {item.get('filename') or item.get('clip_id')}: " + "; ".join(item["flags"]))
     pending_details = [
-        f"- {item.get('filename') or item.get('clip_id')}: pending re-analysis under the new consistency model"
+        f"- {item.get('filename') or item.get('clip_id')}: old_schema=true, needs_reanalysis=true"
         for item in pending
     ]
     return "\n".join(
@@ -273,7 +319,7 @@ def _format_table(results: list[dict]) -> str:
             divider,
             *body,
             "",
-            f"{len(pending)} reports pending re-analysis under the new consistency model (not flagged as inconsistent).",
+            f"{len(pending)} reports pending re-analysis under the canonical verdict schema (not flagged as inconsistent).",
             f"{len(details)} reports flagged for genuine score/verdict gaps.",
             "",
             "Pending re-analysis:",
@@ -302,7 +348,10 @@ def _write_report(results: list[dict]) -> tuple[Path, Path]:
           <td>{item['raw_score']}</td>
           <td>{item['adjusted_score']}</td>
           <td>{html.escape(str(item.get('raw_verdict') or '-'))}</td>
+          <td>{html.escape(str(item.get('cap_final_verdict') or '-'))}</td>
+          <td>{html.escape(str(item.get('adjusted_score_verdict') or '-'))}</td>
           <td>{html.escape(str(item.get('final_verdict') or '-'))}</td>
+          <td>{html.escape(str(item.get('verdict_source') or '-'))}</td>
           <td>{item['total_penalty']}</td>
           <td>{html.escape(str(item.get('alignment') or '-'))}</td>
           <td>{html.escape(str(item.get('status') or '-'))}</td>
@@ -327,11 +376,11 @@ def _write_report(results: list[dict]) -> tuple[Path, Path]:
 <body>
 <main>
   <h1>Score / Verdict Consistency Audit</h1>
-  <p>{payload['summary']['pending_reanalysis']} reports pending re-analysis under the new consistency model (not flagged as inconsistent).</p>
+  <p>{payload['summary']['pending_reanalysis']} reports pending re-analysis under the canonical verdict schema (not flagged as inconsistent).</p>
   <p>{payload['summary']['needs_review']} reports flagged for genuine score/verdict gaps.</p>
   <p>Reports scanned: {payload['summary']['reports_scanned']} | OK: {payload['summary']['ok']}</p>
   <table>
-    <thead><tr><th>Filename</th><th>Clip ID</th><th>Raw</th><th>Adjusted</th><th>Raw Verdict</th><th>Final Verdict</th><th>Penalty</th><th>Alignment</th><th>Status</th><th>Flags</th></tr></thead>
+    <thead><tr><th>Filename</th><th>Clip ID</th><th>Raw</th><th>Adjusted</th><th>Raw Verdict</th><th>Cap Verdict</th><th>Adjusted Verdict</th><th>Final Verdict</th><th>Source</th><th>Penalty</th><th>Alignment</th><th>Status</th><th>Flags</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </main>

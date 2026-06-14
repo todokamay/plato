@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS clips (
     original_filename TEXT,
     stored_filename TEXT,
     file_path TEXT,
+    source_absolute_path TEXT,
+    source_file_size INTEGER,
+    source_modified_time TEXT,
+    source_identity_key TEXT,
     file_size INTEGER,
     status TEXT,
     duration REAL,
@@ -103,9 +107,20 @@ CREATE INDEX IF NOT EXISTS idx_clip_frames_clip_id ON clip_frames(clip_id);
 """
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_db() -> None:
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "clips", "source_absolute_path", "TEXT")
+        _ensure_column(conn, "clips", "source_file_size", "INTEGER")
+        _ensure_column(conn, "clips", "source_modified_time", "TEXT")
+        _ensure_column(conn, "clips", "source_identity_key", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_source_identity_key ON clips(source_identity_key)")
 
 
 def create_clip(
@@ -114,6 +129,7 @@ def create_clip(
     file_path: str | Path,
     file_size: int,
     status: str = "uploaded",
+    source_identity: dict | None = None,
 ) -> dict:
     clip_id = uuid.uuid4().hex
     timestamp = now_iso()
@@ -121,16 +137,22 @@ def create_clip(
         conn.execute(
             """
             INSERT INTO clips (
-                id, original_filename, stored_filename, file_path, file_size,
+                id, original_filename, stored_filename, file_path,
+                source_absolute_path, source_file_size, source_modified_time, source_identity_key,
+                file_size,
                 status, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 clip_id,
                 original_filename,
                 stored_filename,
                 str(file_path),
+                (source_identity or {}).get("absolute_path"),
+                (source_identity or {}).get("file_size"),
+                (source_identity or {}).get("modified_time"),
+                (source_identity or {}).get("identity_key"),
                 int(file_size),
                 status,
                 timestamp,
@@ -138,6 +160,33 @@ def create_clip(
             ),
         )
     return get_clip(clip_id)
+
+
+def find_clip_by_identity(identity: dict) -> dict | None:
+    identity_key = identity.get("identity_key")
+    absolute_path = identity.get("absolute_path")
+    file_size = identity.get("file_size")
+    modified_time = identity.get("modified_time")
+    with get_connection() as conn:
+        row = None
+        if identity_key:
+            row = conn.execute(
+                "SELECT * FROM clips WHERE source_identity_key = ? ORDER BY created_at DESC LIMIT 1",
+                (identity_key,),
+            ).fetchone()
+        if row is None and absolute_path:
+            row = conn.execute(
+                """
+                SELECT * FROM clips
+                WHERE source_absolute_path = ?
+                  AND (source_file_size = ? OR source_file_size IS NULL)
+                  AND (source_modified_time = ? OR source_modified_time IS NULL)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (absolute_path, file_size, modified_time),
+            ).fetchone()
+    return row_to_dict(row)
 
 
 def update_clip_status(clip_id: str, status: str, error_message: str | None = None) -> None:

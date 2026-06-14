@@ -16,6 +16,8 @@ def main() -> int:
     db.init_db()
     client = TestClient(app)
     assert client.get("/").status_code == 200
+    assert client.get("/batch-qc").status_code == 200
+    assert client.get("/auto-qc").status_code == 200
     assert client.get("/upload").status_code == 200
     assert client.get("/clips").status_code == 200
 
@@ -27,6 +29,11 @@ def main() -> int:
         "total_consistency_penalty": 2,
         "verdict": "REWORK",
         "raw_verdict": "SAFE TO TEST",
+        "cap_final_verdict": "REWORK",
+        "adjusted_score_verdict": "REWORK",
+        "final_verdict": "REWORK",
+        "verdict_source": "tie",
+        "resolution_reason": "cap and adjusted score agree",
         "verdict_cap": {
             "applied": True,
             "raw_verdict": "SAFE TO TEST",
@@ -39,7 +46,11 @@ def main() -> int:
             "adjusted_score": 64,
             "total_consistency_penalty": 2,
             "raw_verdict": "SAFE TO TEST",
+            "cap_final_verdict": "REWORK",
+            "adjusted_score_verdict": "REWORK",
             "final_verdict": "REWORK",
+            "verdict_source": "tie",
+            "resolution_reason": "cap and adjusted score agree",
             "score_verdict_alignment": "aligned",
             "consistency_penalties": [
                 {"code": "weak_opening_cap", "label": "Weak opening", "amount": 2, "reason": "Opening score is low."}
@@ -73,12 +84,24 @@ def main() -> int:
     html_response = client.get(f"/reports/{report_id}")
     assert html_response.status_code == 200
     assert "Score Consistency" in html_response.text
+    assert "Cap verdict" in html_response.text
+    assert "Adjusted-score verdict" in html_response.text
+    assert "Verdict source" in html_response.text
     assert "Measured Value" in html_response.text
     json_response = client.get(f"/reports/{report_id}/json")
     assert json_response.status_code == 200
     assert json_response.json()["report_id"] == report_id
     assert json_response.json()["scoring"]["raw_score"] == 66
+    assert json_response.json()["scoring"]["cap_final_verdict"] == "REWORK"
+    assert json_response.json()["scoring"]["adjusted_score_verdict"] == "REWORK"
+    assert json_response.json()["scoring"]["verdict_source"] == "tie"
     assert json_response.json()["cap_evaluation_parameters"][0]["parameter_name"] == "Opening Visual Change"
+
+    clip_response = client.get(f"/clips/{clip['id']}")
+    assert clip_response.status_code == 200
+    assert "Cap verdict" in clip_response.text
+    assert "Adjusted-score verdict" in clip_response.text
+    assert "Verdict source" in clip_response.text
 
     print("test_ui_routes: OK")
     return 0

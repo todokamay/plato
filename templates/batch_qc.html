@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Automation</p>
+    <h1>Batch QC</h1>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Run Command</h2></div>
+  <pre class="command-block">py tools\batch_qc_folder.py "C:\Users\User\Desktop\Work\VideoAutoPipeline\outputs" --copy-results</pre>
+  <p class="muted">CLI runs analysis, creates ranking outputs, and can copy clips into result folders. Original files are not moved.</p>
+</section>
+
+{% if latest %}
+<section class="metric-grid">
+  <div class="metric"><span>Scanned</span><strong>{{ latest.counts.scanned_count }}</strong></div>
+  <div class="metric"><span>Analyzed</span><strong>{{ latest.counts.analyzed_count }}</strong></div>
+  <div class="metric"><span>Skipped</span><strong>{{ latest.counts.skipped_count }}</strong></div>
+  <div class="metric"><span>Pending Reanalysis</span><strong>{{ pending_reanalysis_count }}</strong></div>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Latest Batch</h2>
+    <span class="muted">{{ latest.batch_id }}</span>
+  </div>
+  <dl class="meta">
+    <dt>Input folder</dt><dd class="path-text">{{ latest.input_folder }}</dd>
+    <dt>Output folder</dt><dd class="path-text">{{ latest.output_dir }}</dd>
+    <dt>Created</dt><dd>{{ latest.created_at }}</dd>
+  </dl>
+  <div class="link-row">
+    {% if latest.paths.batch_report_html %}<a href="{{ latest.paths.batch_report_html }}">Batch HTML</a>{% endif %}
+    {% if latest.paths.batch_summary_csv %}<a href="{{ latest.paths.batch_summary_csv }}">CSV</a>{% endif %}
+    {% if latest.paths.batch_summary_json %}<a href="{{ latest.paths.batch_summary_json }}">JSON</a>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Bucket Counts</h2></div>
+  <div class="score-grid">
+    <div class="score-tile"><span>Publish</span><strong>{{ latest.counts.publish_candidate_count }}</strong></div>
+    <div class="score-tile"><span>Safe Test</span><strong>{{ latest.counts.safe_test_count }}</strong></div>
+    <div class="score-tile"><span>Quick Fix</span><strong>{{ latest.counts.quick_fix_count }}</strong></div>
+    <div class="score-tile"><span>High Upside</span><strong>{{ latest.counts.high_upside_rework_count }}</strong></div>
+    <div class="score-tile"><span>Hold</span><strong>{{ latest.counts.hold_count }}</strong></div>
+    <div class="score-tile"><span>Reject</span><strong>{{ latest.counts.reject_count }}</strong></div>
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Best Picks</h2></div>
+    <dl class="meta">
+      {% for label, item in latest.best.items() %}
+        <dt>{{ label|replace("_", " ")|title }}</dt>
+        <dd>{{ item.filename if item else "-" }}</dd>
+      {% endfor %}
+    </dl>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Recent Batches</h2></div>
+    <ul class="plain-list">
+      {% for batch in batches %}
+        <li>{{ batch.batch_id }} - {{ batch.counts.scanned_count }} scanned</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Latest Portfolio</h2></div>
+  <div class="table-wrap">
+    <table class="batch-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Filename</th>
+          <th>Score</th>
+          <th>Verdict</th>
+          <th>Bucket</th>
+          <th>Risk</th>
+          <th>Top Fix</th>
+          <th>Report</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for clip in latest.clips[:20] %}
+          <tr>
+            <td data-label="Rank">{{ clip.rank }}</td>
+            <td data-label="Filename">{{ clip.filename }}</td>
+            <td data-label="Score">{{ clip.adjusted_score }}</td>
+            <td data-label="Verdict">{{ clip.final_verdict }}</td>
+            <td data-label="Bucket">{{ clip.portfolio_bucket }}{% if clip.old_schema %}<br><span class="muted">needs reanalysis</span>{% endif %}</td>
+            <td data-label="Risk">{{ clip.risk_level }} {{ clip.risk_score }}</td>
+            <td data-label="Top Fix">{{ clip.top_action or "-" }}</td>
+            <td data-label="Report">{% if clip.html_report_path %}<a href="{{ clip.html_report_path }}">Report</a>{% else %}-{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td data-label="Status" colspan="8">No clips in latest batch.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <div class="section-title"><h2>No Batch Runs Yet</h2></div>
+  <p class="muted">Run the command above to create the first batch summary.</p>
+</section>
+{% endif %}
+{% endblock %}

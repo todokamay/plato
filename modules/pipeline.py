@@ -6,6 +6,7 @@ from pathlib import Path
 from config import REPORTS_DIR, UPLOAD_DIR, ensure_data_dirs, project_path
 from modules import db
 from modules.audio_analyzer import analyze_audio
+from modules.clip_identity import get_clip_identity
 from modules.edit_point_generator import estimate_after_fixes, generate_edit_points
 from modules.frame_sampler import create_contact_sheet, sample_frames
 from modules.opening_analyzer import analyze_opening
@@ -169,7 +170,8 @@ def import_clip_file(source_path: str | Path) -> dict:
     source = Path(source_path)
     if not source.exists() or not source.is_file():
         raise FileNotFoundError(f"Video file not found: {source}")
+    identity = get_clip_identity(source)
     stored_name = f"{uuid.uuid4().hex}{source.suffix.lower()}"
     target = project_path(UPLOAD_DIR) / stored_name
     shutil.copy2(source, target)
-    return db.create_clip(source.name, stored_name, str(target), target.stat().st_size)
+    return db.create_clip(source.name, stored_name, str(target), target.stat().st_size, source_identity=identity)

@@ -1,4 +1,5 @@
 from config import SCORE_WEIGHTS, THRESHOLDS
+from modules.verdict_resolver import verdict_from_score
 
 
 VERDICT_RANK = {
@@ -17,18 +18,7 @@ def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
 
 
 def verdict_for_score(score: float) -> str:
-    score = float(score)
-    if score >= 90:
-        return "STRONG PUBLISH"
-    if score >= 80:
-        return "PUBLISH"
-    if score >= 68:
-        return "SAFE TO TEST"
-    if score >= 50:
-        return "REWORK"
-    if score >= 35:
-        return "HOLD"
-    return "REJECT"
+    return verdict_from_score(score)
 
 
 def formula_score(scores: dict, critical_penalty: float = 0.0) -> float:

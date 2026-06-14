@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from config import THRESHOLDS
+from modules.verdict_resolver import resolve_final_verdict
 
 
 def _clean_metadata(metadata: dict) -> dict:
@@ -168,14 +169,33 @@ def _scoring_payload(scores: dict) -> dict:
     if cap_reasons is None:
         cap_reasons = (scores.get("verdict_cap") or {}).get("cap_reasons", [])
 
-    scoring.setdefault("raw_score", raw_score)
-    scoring.setdefault("adjusted_score", adjusted_score)
-    scoring.setdefault("total_consistency_penalty", total_penalty)
-    scoring.setdefault("raw_verdict", scores.get("raw_verdict", scores.get("verdict")))
-    scoring.setdefault("final_verdict", scores.get("verdict"))
-    scoring.setdefault("score_verdict_alignment", scores.get("score_verdict_alignment", "aligned"))
+    raw_verdict = scoring.get("raw_verdict") or scores.get("raw_verdict") or scores.get("verdict")
+    cap_final_verdict = (
+        scoring.get("cap_final_verdict")
+        or scores.get("cap_final_verdict")
+        or (scores.get("verdict_cap") or {}).get("final_verdict")
+        or scores.get("verdict")
+        or raw_verdict
+    )
+    consistency_penalties = scoring.get("consistency_penalties", scores.get("consistency_penalties", []))
+    resolution = resolve_final_verdict(raw_verdict, cap_final_verdict, adjusted_score, cap_reasons, consistency_penalties)
+
+    scoring["raw_score"] = raw_score
+    scoring["raw_investment_score"] = raw_score
+    scoring["adjusted_score"] = adjusted_score
+    scoring["adjusted_investment_score"] = adjusted_score
+    scoring["investment_score"] = adjusted_score
+    scoring["total_consistency_penalty"] = total_penalty
+    scoring["raw_verdict"] = resolution["raw_verdict"]
+    scoring["cap_final_verdict"] = resolution["cap_final_verdict"]
+    scoring["adjusted_score_verdict"] = resolution["adjusted_score_verdict"]
+    scoring["final_verdict"] = resolution["final_verdict"]
+    scoring["verdict_source"] = resolution["verdict_source"]
+    scoring["resolution_reason"] = resolution["resolution_reason"]
+    default_alignment = "aligned" if scoring["final_verdict"] == scoring["adjusted_score_verdict"] else "cap_limited"
+    scoring.setdefault("score_verdict_alignment", scores.get("score_verdict_alignment", default_alignment))
     scoring.setdefault("score_verdict_gap", scores.get("score_verdict_gap"))
-    scoring.setdefault("consistency_penalties", scores.get("consistency_penalties", []))
+    scoring.setdefault("consistency_penalties", consistency_penalties)
     scoring.setdefault("cap_reasons", cap_reasons)
     scoring.setdefault("consistency_flags", scores.get("consistency_flags", []))
     scoring.setdefault("consistency_penalty_capped", scores.get("consistency_penalty_capped", False))
@@ -187,6 +207,7 @@ def generate_report_json(clip: dict, analyses: dict, scores: dict, recommendatio
     edit_points = recommendations.get("edit_points", [])
     estimated_after_fixes = recommendations.get("estimated_after_fixes", {})
     scoring = _scoring_payload(scores)
+    final_verdict = scoring.get("final_verdict")
     cap_parameters = _cap_evaluation_parameters(analyses, scores, edit_points)
     limitations = [
         "No ML in v0.2.",
@@ -206,8 +227,13 @@ def generate_report_json(clip: dict, analyses: dict, scores: dict, recommendatio
             "raw_investment_score": scoring.get("raw_score"),
             "adjusted_investment_score": scoring.get("adjusted_score"),
             "total_consistency_penalty": scoring.get("total_consistency_penalty"),
-            "verdict": scores.get("verdict"),
-            "raw_verdict": scores.get("raw_verdict"),
+            "verdict": final_verdict,
+            "raw_verdict": scoring.get("raw_verdict"),
+            "cap_final_verdict": scoring.get("cap_final_verdict"),
+            "adjusted_score_verdict": scoring.get("adjusted_score_verdict"),
+            "final_verdict": final_verdict,
+            "verdict_source": scoring.get("verdict_source"),
+            "resolution_reason": scoring.get("resolution_reason"),
             "verdict_cap": scores.get("verdict_cap", {}),
             "score_verdict_alignment": scoring.get("score_verdict_alignment"),
             "consistency_penalties": scoring.get("consistency_penalties", []),
@@ -234,8 +260,13 @@ def generate_report_json(clip: dict, analyses: dict, scores: dict, recommendatio
         "investment_score": scoring.get("adjusted_score"),
         "raw_investment_score": scoring.get("raw_score"),
         "adjusted_investment_score": scoring.get("adjusted_score"),
-        "verdict": scores.get("verdict"),
-        "raw_verdict": scores.get("raw_verdict"),
+        "verdict": final_verdict,
+        "raw_verdict": scoring.get("raw_verdict"),
+        "cap_final_verdict": scoring.get("cap_final_verdict"),
+        "adjusted_score_verdict": scoring.get("adjusted_score_verdict"),
+        "final_verdict": final_verdict,
+        "verdict_source": scoring.get("verdict_source"),
+        "resolution_reason": scoring.get("resolution_reason"),
         "verdict_cap": scores.get("verdict_cap", {}),
         "scoring": scoring,
         "cap_evaluation_parameters": cap_parameters,
@@ -297,9 +328,9 @@ def generate_report_json(clip: dict, analyses: dict, scores: dict, recommendatio
         "composition": analyses.get("visual", {}).get("active_content", {}),
         "audio_quality": analyses.get("audio", {}),
         "final_recommendation": {
-            "verdict": scores.get("verdict"),
+            "verdict": final_verdict,
             "best_fix": recommendations.get("best_fix"),
-            "positioning": _final_positioning(scores.get("verdict")),
+            "positioning": _final_positioning(final_verdict),
         },
         "limitations": limitations,
         "analysis_limitations": limitations,
@@ -335,6 +366,16 @@ def _badge_class(verdict: str | None) -> str:
 
 def _row(label: str, value) -> str:
     return f"<tr><th>{html.escape(label)}</th><td>{html.escape(str(value if value is not None else '-'))}</td></tr>"
+
+
+def _verdict_source_note(source: str | None) -> str:
+    if source == "adjusted_score":
+        return "Final verdict was downgraded because adjusted score falls into a lower verdict band."
+    if source == "cap":
+        return "Final verdict is limited by hard cap reasons."
+    if source == "tie":
+        return "Cap verdict and adjusted-score verdict agree."
+    return "Final verdict was resolved from canonical scoring fields."
 
 
 def _time_range(item: dict) -> str:
@@ -379,22 +420,26 @@ def generate_report_html(report_json: dict) -> str:
         for item in scoring.get("consistency_penalties", [])
     ) or "<tr><td colspan='3'>No consistency adjustment applied.</td></tr>"
     consistency_notes = []
-    if scoring.get("score_verdict_alignment") == "cap_only_gap":
+    if scoring.get("score_verdict_alignment") == "cap_limited":
         cap_text = "; ".join(str(reason) for reason in scoring.get("cap_reasons", [])) or "hard verdict cap"
         consistency_notes.append(
-            "Raw and final verdict differ because of a hard verdict cap, but no consistency penalty was mapped. "
+            "Final verdict is limited by a hard verdict cap. "
             f"Cap reasons: {cap_text}."
         )
     if scoring.get("consistency_penalty_capped"):
         consistency_notes.append("Penalty capped at raw score; adjusted score floored at 0.")
+    consistency_notes.append(_verdict_source_note(scoring.get("verdict_source")))
     consistency_note_html = "".join(f"<p>{html.escape(note)}</p>" for note in consistency_notes)
     scoring_rows = "\n".join(
         [
             _row("Raw Score", scoring.get("raw_score", report_json.get("raw_investment_score"))),
             _row("Adjusted Score", scoring.get("adjusted_score", score)),
-            _row("Adjusted By", f"-{scoring.get('total_consistency_penalty', 0)}"),
+            _row("Total Adjustment", f"-{scoring.get('total_consistency_penalty', 0)}"),
             _row("Raw Verdict", scoring.get("raw_verdict", report_json.get("raw_verdict"))),
+            _row("Cap Final Verdict", scoring.get("cap_final_verdict", report_json.get("cap_final_verdict"))),
+            _row("Adjusted-Score Verdict", scoring.get("adjusted_score_verdict", report_json.get("adjusted_score_verdict"))),
             _row("Final Verdict", scoring.get("final_verdict", verdict)),
+            _row("Verdict Source", scoring.get("verdict_source", report_json.get("verdict_source"))),
             _row("Alignment", scoring.get("score_verdict_alignment", "aligned")),
         ]
     )
@@ -510,7 +555,7 @@ def generate_report_html(report_json: dict) -> str:
     <div class="grid">
       <table>{scoring_rows}</table>
       <div>
-        <p>Adjusted score is designed to match final verdict. Raw score is the pre-cap weighted formula.</p>
+        <p>Adjusted score, consistency penalties, and expected lift are formula-based. Raw score is the pre-cap weighted formula.</p>
         {consistency_note_html}
         <table>
           <thead><tr><th>Adjustment</th><th>Penalty</th><th>Reason</th></tr></thead>

@@ -19,6 +19,8 @@ from config import (
     project_path,
 )
 from modules import db
+from modules.auto_qc import recent_auto_qc_runs
+from modules.batch_qc import recent_batches
 from modules.pipeline import analyze_clip
 from modules.video_probe import probe_video
 
@@ -28,7 +30,9 @@ db.init_db()
 app = FastAPI(title=APP_NAME)
 templates = Jinja2Templates(directory=str(project_path("templates")))
 
-app.mount("/static", StaticFiles(directory=str(project_path("static"))), name="static")
+static_dir = project_path("static")
+static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.mount("/uploads", StaticFiles(directory=str(project_path(UPLOAD_DIR))), name="uploads")
 
 
@@ -109,6 +113,40 @@ def upload_page(request: Request):
             "extensions": ", ".join(SUPPORTED_EXTENSIONS),
             "max_upload_mb": MAX_UPLOAD_MB,
             "error": None,
+        },
+    )
+
+
+@app.get("/batch-qc")
+def batch_qc_page(request: Request):
+    batches = recent_batches()
+    latest = batches[0] if batches else None
+    pending = 0
+    if latest:
+        pending = sum(1 for clip in latest.get("clips", []) if clip.get("needs_reanalysis"))
+    return templates.TemplateResponse(
+        "batch_qc.html",
+        {
+            "request": request,
+            "title": "Batch QC",
+            "latest": latest,
+            "batches": batches,
+            "pending_reanalysis_count": pending,
+        },
+    )
+
+
+@app.get("/auto-qc")
+def auto_qc_page(request: Request):
+    runs = recent_auto_qc_runs()
+    latest = runs[0] if runs else None
+    return templates.TemplateResponse(
+        "auto_qc.html",
+        {
+            "request": request,
+            "title": "Auto QC",
+            "latest": latest,
+            "runs": runs,
         },
     )
 

@@ -1,53 +1,97 @@
 # Plato Video Lab
 
-Deterministic local MVP for short-form video investment analysis.
+Deterministic local toolkit for short-form video QC, ranking, reporting, and conservative auto-fix.
 
-## Run
+Plato Video Lab is built for a local workflow where ready MP4 clips are analyzed after export, sorted by publishing readiness, and optionally passed through safe ffmpeg fixes. It does not use ML, OCR, Whisper, OpenAI/Ollama/VLM calls, cloud services, or auto-publishing.
+
+## UI
+
+Run the FastAPI app:
 
 ```powershell
-cd C:\Users\User\Desktop\Work\PlatoVideoLab
 py tools\init_db.py
 py app.py
 ```
 
 Open:
 
-- http://127.0.0.1:8000/
-- http://127.0.0.1:8000/upload
-- http://127.0.0.1:8000/clips
+- `http://127.0.0.1:8000/` dashboard
+- `http://127.0.0.1:8000/upload` upload/analyze workflow
+- `http://127.0.0.1:8000/clips` clip list
+- `http://127.0.0.1:8000/batch-qc` latest batch QC dashboard
+- `http://127.0.0.1:8000/auto-qc` latest automated QC/auto-fix dashboard
 
-## CLI
+## CLI Tools
+
+Single clip analysis:
 
 ```powershell
 py tools\analyze_clip.py path\to\video.mp4
 ```
 
-The CLI imports the source file into `data/uploads`, runs the same pipeline as the web UI, then writes JSON and HTML reports into `data/reports`.
+Batch QC for a folder:
 
-## Scoring
-
-Investment Score =
-
-```text
-0.25 * OpeningScore
-+ 0.25 * RetentionScore
-+ 0.20 * TechnicalScore
-+ 0.15 * AudioScore
-+ 0.15 * FormatScore
-- CriticalPenalty
+```powershell
+py tools\batch_qc_folder.py "C:\Users\User\Desktop\Work\VideoAutoPipeline\outputs" --copy-results
 ```
 
-Estimated lifts are deterministic formula lifts. They are not historical performance predictions.
+Automated QC with conservative ffmpeg fixes:
 
-v0.1.1 also applies deterministic verdict caps. Low bitrate, weak opening, high/critical issues, source-format mismatch, or weak active-content area can cap a high raw score to a lower final verdict. Reports show the cap reasons and Strong Publish blockers.
+```powershell
+py tools\auto_qc_fix_folder.py "C:\Users\User\Desktop\Work\VideoAutoPipeline\outputs" --auto-fix --copy-results
+```
 
-Active content detection is heuristic: it estimates the meaningful visual region from sampled frames and flags pillarbox, letterbox, or small centered content without OCR or ML.
+Run tests:
 
-v0.2 adds a deterministic Edit Point Timeline. Each edit point includes timestamps, priority, severity, action, recommended edit, detected-by sources, and formula-based expected lift. Reports also include audio energy windows, rhythm/dead-time metrics, and before/after estimates for P0/P1 fixes.
+```powershell
+py tools\run_tests.py
+```
+
+## Current v0.2.2 Capabilities
+
+- FastAPI + Jinja local web UI.
+- SQLite-backed local clip/report storage.
+- ffprobe metadata, frame sampling, OpenCV visual analysis, deterministic audio analysis, opening analysis, retention/rhythm metrics, and active-content heuristics.
+- Deterministic score consistency layer with raw score, adjusted score, cap verdict, adjusted-score verdict, canonical final verdict, verdict source, and alignment labels.
+- Deterministic edit-point timeline with priorities, timestamps, expected formula lift, detected-by sources, and recommended edits.
+- Batch QC folder scanning with skip-by-identity, `--force`, `--recursive`, `--limit`, `--dry-run`, CSV/JSON/HTML summaries, and optional result copying.
+- Portfolio buckets: `Publish Candidate`, `Safe Test`, `Quick Fix`, `High Upside Rework`, `Hold / Source Material`, and `Reject`.
+- DaVinci marker CSV and fix-plan CSV/JSON export for manual editing workflows.
+- Auto-QC pipeline that plans safe deterministic fixes, applies optional ffmpeg auto-fixes, re-analyzes fixed MP4 copies, compares before/after, and routes final outputs.
+- Auto-QC output buckets: `publish_ready`, `safe_to_test`, `fixed_publish_ready`, `fixed_safe_to_test`, `rejected`, `failed_fix`, `hold_source`, and `debug_review`.
+
+## Safety Guarantees
+
+- No destructive editing.
+- Optional conservative ffmpeg auto-fix exists, originals are never modified.
+- Original files are not moved, deleted, or overwritten.
+- Fixed outputs are written as new MP4 files under run output folders.
+- Result folders receive copies only when `--copy-results` is used.
+- No DaVinci Resolve automation or scripting in v0.2.2.
+- No auto-publishing.
+- No virality prediction; scores and lifts are deterministic formula estimates, not historical performance forecasts.
+
+## Reports And Outputs
+
+Single-clip reports are written to `data/reports`.
+
+Batch QC runs are written to:
+
+```text
+data/qc_results/batch_YYYYMMDD_HHMMSS/
+```
+
+Auto-QC runs are written to:
+
+```text
+data/auto_qc_runs/run_YYYYMMDD_HHMMSS/
+```
+
+Runtime data, generated reports, SQLite files, logs, video files, and Python caches are ignored by Git.
 
 ## Limits
 
-- No ML in v0.1.
-- No OCR or subtitle safe-zone detection in v0.1.
+- Active-content detection is heuristic and deterministic.
 - Credits-like/static text-card detection is heuristic.
-- No automatic editing or publishing.
+- DaVinci exports are marker/fix-plan files only; they do not control Resolve.
+- Auto-fix is intentionally conservative and limited to safe ffmpeg operations such as re-export, audio normalization/boost, short opening trims, ending trims, and short high-confidence segment removals.

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Automation</p>
+    <h1>Auto QC</h1>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Run Command</h2></div>
+  <pre class="command-block">py tools\auto_qc_fix_folder.py "C:\Users\User\Desktop\Work\VideoAutoPipeline\outputs" --auto-fix --copy-results</pre>
+  <p class="muted">CLI analyzes clips, applies conservative ffmpeg fixes when safe, re-analyzes fixed MP4s, and copies accepted finals into result folders. Original files are never modified.</p>
+</section>
+
+{% if latest %}
+<section class="metric-grid">
+  <div class="metric"><span>Scanned</span><strong>{{ latest.counts.scanned_count }}</strong></div>
+  <div class="metric"><span>Fix Attempts</span><strong>{{ latest.counts.auto_fix_attempted_count }}</strong></div>
+  <div class="metric"><span>Accepted</span><strong>{{ latest.counts.accepted_fix_count }}</strong></div>
+  <div class="metric"><span>Failed</span><strong>{{ latest.counts.failed_count }}</strong></div>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Latest Run</h2>
+    <span class="muted">{{ latest.run_id }}</span>
+  </div>
+  <dl class="meta">
+    <dt>Input folder</dt><dd class="path-text">{{ latest.input_folder }}</dd>
+    <dt>Output folder</dt><dd class="path-text">{{ latest.output_dir }}</dd>
+    <dt>Created</dt><dd>{{ latest.created_at }}</dd>
+  </dl>
+  <div class="link-row">
+    {% if latest.paths.run_report_html %}<a href="{{ latest.paths.run_report_html }}">Run HTML</a>{% endif %}
+    {% if latest.paths.run_summary_csv %}<a href="{{ latest.paths.run_summary_csv }}">CSV</a>{% endif %}
+    {% if latest.paths.run_summary_json %}<a href="{{ latest.paths.run_summary_json }}">JSON</a>{% endif %}
+    {% if latest.paths.run_fix_plan_csv %}<a href="{{ latest.paths.run_fix_plan_csv }}">Fix Plan CSV</a>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Final Outputs</h2></div>
+  <div class="score-grid">
+    <div class="score-tile"><span>Publish</span><strong>{{ latest.counts.publish_ready_count }}</strong></div>
+    <div class="score-tile"><span>Safe Test</span><strong>{{ latest.counts.safe_to_test_count }}</strong></div>
+    <div class="score-tile"><span>Fixed Publish</span><strong>{{ latest.counts.fixed_publish_ready_count }}</strong></div>
+    <div class="score-tile"><span>Fixed Safe</span><strong>{{ latest.counts.fixed_safe_to_test_count }}</strong></div>
+    <div class="score-tile"><span>Rejected</span><strong>{{ latest.counts.rejected_count }}</strong></div>
+    <div class="score-tile"><span>Failed Fix</span><strong>{{ latest.counts.failed_fix_count }}</strong></div>
+    <div class="score-tile"><span>Hold</span><strong>{{ latest.counts.hold_source_count }}</strong></div>
+    <div class="score-tile"><span>Review</span><strong>{{ latest.counts.debug_review_count }}</strong></div>
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Accepted Fixes</h2></div>
+    <ul class="plain-list">
+      {% for clip in latest.accepted_fixes[:8] %}
+        <li>{{ clip.filename }} - {{ clip.delta_score }} pts - {{ clip.fixed_final_verdict }}</li>
+      {% else %}
+        <li>No accepted fixes in latest run.</li>
+      {% endfor %}
+    </ul>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Recent Runs</h2></div>
+    <ul class="plain-list">
+      {% for run in runs %}
+        <li>{{ run.run_id }} - {{ run.counts.scanned_count }} scanned</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Latest Results</h2></div>
+  <div class="table-wrap">
+    <table class="batch-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Filename</th>
+          <th>Before</th>
+          <th>Original Verdict</th>
+          <th>Fix</th>
+          <th>After</th>
+          <th>Final Bucket</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for clip in latest.clips[:20] %}
+          <tr>
+            <td data-label="Rank">{{ clip.rank }}</td>
+            <td data-label="Filename">{{ clip.filename }}</td>
+            <td data-label="Before">{{ clip.original_adjusted_score }}</td>
+            <td data-label="Original Verdict">{{ clip.original_final_verdict }}</td>
+            <td data-label="Fix">{{ "accepted" if clip.fix_accepted else "attempted" if clip.auto_fix_attempted else "none" }}</td>
+            <td data-label="After">{{ clip.fixed_adjusted_score or "-" }}</td>
+            <td data-label="Final Bucket">{{ clip.final_bucket }}</td>
+            <td data-label="Reason">{{ clip.failure_reason or "-" }}</td>
+          </tr>
+        {% else %}
+          <tr><td data-label="Status" colspan="8">No clips in latest auto-QC run.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <div class="section-title"><h2>No Auto QC Runs Yet</h2></div>
+  <p class="muted">Run the command above to create the first auto-QC summary.</p>
+</section>
+{% endif %}
+{% endblock %}

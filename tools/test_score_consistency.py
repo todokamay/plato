@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from modules.score_consistency import apply_score_consistency, calculate_consistency_penalties
+from modules.score_consistency import _alignment_status, apply_score_consistency, calculate_consistency_penalties
 
 
 def _score(raw=87.3, raw_verdict="PUBLISH", final_verdict="SAFE TO TEST", cap_reasons=None):
@@ -51,10 +51,49 @@ def main() -> int:
     assert consistency["total_consistency_penalty"] == 9.0
     assert round(sum(item["amount"] for item in consistency["consistency_penalties"]), 1) == 9.0
     assert consistency["consistency_penalty_capped"] is False
-    assert consistency["score_verdict_alignment"] == "aligned_with_penalty"
+    assert consistency["cap_final_verdict"] == "SAFE TO TEST"
+    assert consistency["adjusted_score_verdict"] == "SAFE TO TEST"
+    assert consistency["final_verdict"] == "SAFE TO TEST"
+    assert consistency["verdict_source"] == "tie"
+    assert consistency["score_verdict_alignment"] == "aligned"
     assert adjusted["investment_score"] == consistency["adjusted_score"]
     assert adjusted["raw_investment_score"] == 87.3
+    assert adjusted["verdict"] == "SAFE TO TEST"
+    assert adjusted["final_verdict"] == "SAFE TO TEST"
     assert adjusted["consistency_penalty_capped"] is False
+
+    adjusted_downgrade = calculate_consistency_penalties(
+        _score(raw=82, raw_verdict="PUBLISH", final_verdict="PUBLISH"),
+        _analyses(bitrate=1768),
+        [{"id": "edit_001", "priority": "P1", "issue_type": "low_bitrate"}],
+    )
+    assert adjusted_downgrade["adjusted_score"] == 76.5
+    assert adjusted_downgrade["cap_final_verdict"] == "PUBLISH"
+    assert adjusted_downgrade["adjusted_score_verdict"] == "SAFE TO TEST"
+    assert adjusted_downgrade["final_verdict"] == "SAFE TO TEST"
+    assert adjusted_downgrade["verdict_source"] == "adjusted_score"
+
+    rework_downgrade = calculate_consistency_penalties(
+        _score(raw=74, raw_verdict="SAFE TO TEST", final_verdict="PUBLISH"),
+        _analyses(bitrate=900),
+        [{"id": "edit_001", "priority": "P1", "issue_type": "very_low_bitrate"}],
+    )
+    assert rework_downgrade["adjusted_score"] == 62
+    assert rework_downgrade["adjusted_score_verdict"] == "REWORK"
+    assert rework_downgrade["final_verdict"] == "REWORK"
+    assert rework_downgrade["final_verdict"] not in {"SAFE TO TEST", "PUBLISH"}
+    assert rework_downgrade["verdict_source"] == "adjusted_score"
+
+    cap_cannot_be_upgraded = calculate_consistency_penalties(
+        _score(raw=85, raw_verdict="PUBLISH", final_verdict="REWORK", cap_reasons=["manual hard cap"]),
+        _analyses(bitrate=4000),
+        [],
+    )
+    assert cap_cannot_be_upgraded["adjusted_score"] == 85
+    assert cap_cannot_be_upgraded["adjusted_score_verdict"] == "PUBLISH"
+    assert cap_cannot_be_upgraded["final_verdict"] == "REWORK"
+    assert cap_cannot_be_upgraded["verdict_source"] == "cap"
+    assert cap_cannot_be_upgraded["score_verdict_alignment"] == "cap_limited"
 
     low_bitrate = calculate_consistency_penalties(
         _score(cap_reasons=["video bitrate is low at 1768 kbps"]),
@@ -101,7 +140,7 @@ def main() -> int:
         [{"id": "edit_001", "priority": "P0", "issue_type": "black_segment"}],
     )
     assert critical["adjusted_score"] < 35
-    assert critical["score_verdict_alignment"] == "aligned_with_penalty"
+    assert critical["score_verdict_alignment"] == "aligned"
 
     capped = calculate_consistency_penalties(
         _score(
@@ -134,7 +173,28 @@ def main() -> int:
     )
     assert cap_only["total_consistency_penalty"] == 0
     assert cap_only["adjusted_score"] == 91
-    assert cap_only["score_verdict_alignment"] == "cap_only_gap"
+    assert cap_only["final_verdict"] == "PUBLISH"
+    assert cap_only["verdict_source"] == "cap"
+    assert cap_only["score_verdict_alignment"] == "cap_limited"
+
+    assert _alignment_status(
+        {"final_verdict": "PUBLISH", "adjusted_score_verdict": "STRONG PUBLISH", "verdict_source": "adjusted_score"},
+        95,
+        91,
+        [],
+    ) == "minor_gap"
+    assert _alignment_status(
+        {"final_verdict": "REWORK", "adjusted_score_verdict": "PUBLISH", "verdict_source": "adjusted_score"},
+        88,
+        82,
+        [],
+    ) == "major_gap"
+    assert _alignment_status(
+        {"final_verdict": "REWORK", "adjusted_score_verdict": "PUBLISH", "verdict_source": "cap"},
+        88,
+        82,
+        ["manual cap"],
+    ) == "cap_limited"
 
     print("test_score_consistency: OK")
     return 0

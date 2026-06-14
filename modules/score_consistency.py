@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from config import THRESHOLDS
 from modules.scoring import VERDICT_RANK
+from modules.verdict_resolver import resolve_final_verdict, verdict_rank
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -338,22 +339,28 @@ def _verdict_band_alignment(final_verdict: str, raw_score: float, adjusted_score
     return "aligned"
 
 
-def _alignment_status(raw_score: float, adjusted_score: float, raw_verdict: str, final_verdict: str, cap_reasons: list[str], total_penalty: float) -> str:
-    if raw_verdict != final_verdict and total_penalty == 0:
-        return "cap_only_gap"
-
-    band_alignment = _verdict_band_alignment(final_verdict, raw_score, adjusted_score, cap_reasons)
-    if raw_verdict != final_verdict and total_penalty > 0 and band_alignment == "aligned":
-        return "aligned_with_penalty"
-    return band_alignment
+def _alignment_status(resolution: dict, raw_score: float, adjusted_score: float, cap_reasons: list[str]) -> str:
+    if resolution.get("verdict_source") == "cap":
+        return "cap_limited"
+    return _verdict_band_alignment(resolution.get("final_verdict"), raw_score, adjusted_score, cap_reasons)
 
 
-def _consistency_flags(raw_score: float, adjusted_score: float, raw_verdict: str, final_verdict: str, alignment: str, cap_reasons: list[str], total_penalty: float) -> list[str]:
+def _consistency_flags(
+    raw_score: float,
+    adjusted_score: float,
+    raw_verdict: str,
+    cap_final_verdict: str,
+    adjusted_score_verdict: str,
+    final_verdict: str,
+    alignment: str,
+    cap_reasons: list[str],
+    total_penalty: float,
+) -> list[str]:
     flags = []
     if alignment == "major_gap":
         flags.append("Adjusted score still does not match the final verdict band.")
-    if alignment == "cap_only_gap":
-        flags.append("Final verdict differs from raw verdict but no consistency penalty was applied.")
+    if alignment == "cap_limited" and not cap_reasons:
+        flags.append("Final verdict is cap-limited but no cap reasons are recorded.")
     if raw_score >= 85 and final_verdict == "SAFE TO TEST" and adjusted_score >= 80:
         flags.append("High raw score remains publish-band after SAFE TO TEST cap.")
     if raw_score >= 80 and final_verdict == "REWORK" and adjusted_score >= 68:
@@ -363,15 +370,20 @@ def _consistency_flags(raw_score: float, adjusted_score: float, raw_verdict: str
     if cap_reasons and total_penalty < 2:
         flags.append("Verdict cap exists but score adjustment is too small to explain it.")
     drop = VERDICT_RANK.get(raw_verdict, 0) - VERDICT_RANK.get(final_verdict, 0)
-    if drop >= 2 and alignment not in {"aligned", "aligned_with_penalty"}:
+    if drop >= 2 and alignment not in {"aligned", "cap_limited"}:
         flags.append("Final verdict is two or more tiers below raw verdict.")
+    if final_verdict != adjusted_score_verdict and verdict_rank(final_verdict) < verdict_rank(adjusted_score_verdict):
+        flags.append("Final verdict is less conservative than the adjusted-score verdict.")
+    if final_verdict != cap_final_verdict and verdict_rank(final_verdict) < verdict_rank(cap_final_verdict):
+        flags.append("Final verdict is less conservative than the cap verdict.")
     return flags
 
 
 def calculate_consistency_penalties(score_result: dict, analyses: dict, edit_points: list[dict]) -> dict:
     raw_score = _as_float(score_result.get("raw_investment_score", score_result.get("investment_score")))
     raw_verdict = score_result.get("raw_verdict") or score_result.get("verdict")
-    final_verdict = score_result.get("verdict") or raw_verdict
+    cap_result = score_result.get("verdict_cap") or {}
+    cap_final_verdict = score_result.get("cap_final_verdict") or cap_result.get("final_verdict") or score_result.get("verdict") or raw_verdict
     cap_reasons = _cap_reasons(score_result)
     penalties: dict[str, dict] = {}
 
@@ -381,16 +393,32 @@ def calculate_consistency_penalties(score_result: dict, analyses: dict, edit_poi
     penalty_items = _finish_penalties(penalties)
     penalty_items, total_penalty, penalty_capped = _cap_penalty_items(penalty_items, raw_score)
     adjusted_score = round(max(0.0, raw_score - total_penalty), 1)
-    alignment = _alignment_status(raw_score, adjusted_score, raw_verdict, final_verdict, cap_reasons, total_penalty)
-    flags = _consistency_flags(raw_score, adjusted_score, raw_verdict, final_verdict, alignment, cap_reasons, total_penalty)
+    resolution = resolve_final_verdict(raw_verdict, cap_final_verdict, adjusted_score, cap_reasons, penalty_items)
+    final_verdict = resolution["final_verdict"]
+    alignment = _alignment_status(resolution, raw_score, adjusted_score, cap_reasons)
+    flags = _consistency_flags(
+        raw_score,
+        adjusted_score,
+        resolution["raw_verdict"],
+        resolution["cap_final_verdict"],
+        resolution["adjusted_score_verdict"],
+        final_verdict,
+        alignment,
+        cap_reasons,
+        total_penalty,
+    )
 
     return {
         "raw_score": round(raw_score, 1),
         "adjusted_score": adjusted_score,
         "total_consistency_penalty": total_penalty,
         "consistency_penalty_capped": penalty_capped,
-        "raw_verdict": raw_verdict,
+        "raw_verdict": resolution["raw_verdict"],
+        "cap_final_verdict": resolution["cap_final_verdict"],
+        "adjusted_score_verdict": resolution["adjusted_score_verdict"],
         "final_verdict": final_verdict,
+        "verdict_source": resolution["verdict_source"],
+        "resolution_reason": resolution["resolution_reason"],
         "score_verdict_alignment": alignment,
         "score_verdict_gap": f"raw_{_slug(raw_verdict)}_final_{_slug(final_verdict)}",
         "consistency_penalties": penalty_items,
@@ -407,6 +435,13 @@ def apply_score_consistency(score_result: dict, consistency: dict) -> dict:
     updated["raw_investment_score"] = raw_score
     updated["adjusted_investment_score"] = adjusted_score
     updated["investment_score"] = adjusted_score
+    updated["raw_verdict"] = consistency.get("raw_verdict", updated.get("raw_verdict"))
+    updated["cap_final_verdict"] = consistency.get("cap_final_verdict", updated.get("cap_final_verdict"))
+    updated["adjusted_score_verdict"] = consistency.get("adjusted_score_verdict")
+    updated["final_verdict"] = consistency.get("final_verdict", updated.get("verdict"))
+    updated["verdict"] = updated["final_verdict"]
+    updated["verdict_source"] = consistency.get("verdict_source")
+    updated["resolution_reason"] = consistency.get("resolution_reason")
     updated["total_consistency_penalty"] = consistency.get("total_consistency_penalty", 0.0)
     updated["consistency_penalty_capped"] = consistency.get("consistency_penalty_capped", False)
     updated["consistency_penalties"] = consistency.get("consistency_penalties", [])

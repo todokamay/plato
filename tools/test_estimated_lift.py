@@ -13,6 +13,10 @@ def main() -> int:
         "raw_investment_score": 87.3,
         "adjusted_investment_score": 79.8,
         "verdict": "SAFE TO TEST",
+        "cap_final_verdict": "SAFE TO TEST",
+        "adjusted_score_verdict": "SAFE TO TEST",
+        "final_verdict": "SAFE TO TEST",
+        "verdict_source": "tie",
         "verdict_cap": {
             "applied": True,
             "cap_reasons": ["video bitrate is low at 1768 kbps", "the first half-second has low visual change"],

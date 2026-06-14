@@ -127,6 +127,14 @@ def main() -> int:
     assert report["investment_score"] == 82
     assert report["raw_investment_score"] == 91
     assert report["scoring"]["adjusted_score"] == 82
+    assert report["scoring"]["cap_final_verdict"] == "PUBLISH"
+    assert report["scoring"]["adjusted_score_verdict"] == "PUBLISH"
+    assert report["scoring"]["final_verdict"] == "PUBLISH"
+    assert report["scoring"]["verdict_source"] == "tie"
+    assert report["cap_final_verdict"] == "PUBLISH"
+    assert report["adjusted_score_verdict"] == "PUBLISH"
+    assert report["final_verdict"] == "PUBLISH"
+    assert report["verdict_source"] == "tie"
     assert report["scoring"]["total_consistency_penalty"] == 9
     assert report["scoring"]["consistency_penalties"][0]["label"] == "Composition blocker"
     active_rows = [item for item in report["cap_evaluation_parameters"] if item["parameter_name"] == "Active Content Ratio"]
@@ -140,6 +148,10 @@ def main() -> int:
     assert "<html" in html.lower()
     assert "Verdict Cap Explanation" in html
     assert "Score Consistency" in html
+    assert "Cap Final Verdict" in html
+    assert "Adjusted-Score Verdict" in html
+    assert "Verdict Source" in html
+    assert "Cap verdict and adjusted-score verdict agree." in html
     assert "Measured Value" in html
     assert "Active Content Ratio" in html
     assert "Adjusted score is formula-based" in json.dumps(report)
