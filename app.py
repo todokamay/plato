@@ -21,13 +21,19 @@ from config import (
 from modules import db
 from modules.auto_qc import recent_auto_qc_runs
 from modules.batch_qc import recent_batches
+from modules.history_engine import history_summary
+from modules.orchestrator import orchestrator_status
 from modules.pipeline import analyze_clip
+from modules.queue_engine import queue_stats
+from modules.report_center import report_payload
 from modules.video_probe import probe_video
+from routes.api import router as api_router
 
 ensure_data_dirs()
 db.init_db()
 
 app = FastAPI(title=APP_NAME)
+app.include_router(api_router)
 templates = Jinja2Templates(directory=str(project_path("templates")))
 
 static_dir = project_path("static")
@@ -102,6 +108,11 @@ def dashboard(request: Request):
     )
 
 
+@app.get("/dashboard")
+def dashboard_alias(request: Request):
+    return dashboard(request)
+
+
 @app.get("/upload")
 def upload_page(request: Request):
     return templates.TemplateResponse(
@@ -147,6 +158,21 @@ def auto_qc_page(request: Request):
             "title": "Auto QC",
             "latest": latest,
             "runs": runs,
+        },
+    )
+
+
+@app.get("/control-center")
+def control_center_page(request: Request):
+    return templates.TemplateResponse(
+        "control_center.html",
+        {
+            "request": request,
+            "title": "Control Center",
+            "status": orchestrator_status(),
+            "queue": queue_stats(),
+            "report": report_payload("all-time"),
+            "history": history_summary(),
         },
     )
 

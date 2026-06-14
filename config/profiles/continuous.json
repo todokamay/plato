@@ -1,0 +1,8 @@
+{
+  "profile": "continuous",
+  "watch": {
+    "stable_seconds": 5,
+    "poll_interval": 10,
+    "max_files_per_cycle": 25
+  }
+}

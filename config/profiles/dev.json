@@ -1,0 +1,8 @@
+{
+  "profile": "dev",
+  "watch": {
+    "stable_seconds": 0,
+    "poll_interval": 2,
+    "max_files_per_cycle": 3
+  }
+}

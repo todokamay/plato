@@ -1,0 +1,14 @@
+{
+  "profile": "local",
+  "watch": {
+    "stable_seconds": 5,
+    "poll_interval": 10,
+    "max_files_per_cycle": 10
+  },
+  "queue": {
+    "max_attempts": 3
+  },
+  "resource_limits": {
+    "min_disk_free_ratio": 0.05
+  }
+}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Video Factory OS</p>
+    <h1>Control Center</h1>
+  </div>
+  <div class="action-row">
+    <a class="button primary" href="/api/status">Status API</a>
+    <a class="button" href="/auto-qc">Auto QC</a>
+  </div>
+</section>
+
+<section class="metric-grid">
+  <article class="metric">
+    <span>Orchestrator</span>
+    <strong>{{ status.orchestrator_state }}</strong>
+  </article>
+  <article class="metric">
+    <span>Health</span>
+    <strong>{{ status.health.state }}</strong>
+  </article>
+  <article class="metric">
+    <span>Queue</span>
+    <strong>{{ queue.total }}</strong>
+  </article>
+  <article class="metric">
+    <span>Accept rate</span>
+    <strong>{{ report.counts.accept_rate }}</strong>
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Queue</h2><a href="/api/queue">JSON</a></div>
+    <dl class="meta">
+      {% for state, count in queue.counts.items() %}
+        <dt>{{ state }}</dt><dd>{{ count }}</dd>
+      {% endfor %}
+    </dl>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Health</h2><a href="/api/health">JSON</a></div>
+    <dl class="meta">
+      <dt>Disk free</dt><dd>{{ status.health.disk.free_bytes|bytes }}</dd>
+      <dt>Pipeline</dt><dd>{{ status.health.pipeline.state }}</dd>
+      <dt>CPU</dt><dd>{{ status.health.cpu.state }}</dd>
+      <dt>RAM</dt><dd>{{ status.health.ram.state }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Recent History</h2>
+    <a href="/api/history">JSON</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Clip</th><th>Action</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for item in history.recent %}
+          <tr>
+            <td>{{ item.created_at }}</td>
+            <td>{{ item.clip_identity }}</td>
+            <td>{{ item.action }}</td>
+            <td><span class="status">{{ item.status }}</span></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">No history yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Factory Commands</h2></div>
+  <pre class="command-block">py tools\run_orchestrator.py --once
+py tools\watch_videoautopipeline_outputs.py --detect-videoautopipeline-outputs --auto-fix --copy-results
+py tools\run_full_validation.py</pre>
+</section>
+{% endblock %}

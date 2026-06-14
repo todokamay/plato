@@ -1,0 +1,11 @@
+{
+  "profile": "production",
+  "watch": {
+    "stable_seconds": 10,
+    "poll_interval": 15,
+    "max_files_per_cycle": 50
+  },
+  "resource_limits": {
+    "min_disk_free_ratio": 0.1
+  }
+}
