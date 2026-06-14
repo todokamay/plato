@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block content %}
+{% set edit_points = data.edit_points if data.edit_points is defined else [] %}
+{% set scoring = data.scoring if data.scoring is defined and data.scoring else {} %}
+{% set penalties = scoring.consistency_penalties if scoring.consistency_penalties is defined else [] %}
+{% set scoring_cap_reasons = scoring.cap_reasons if scoring.cap_reasons is defined else [] %}
+{% set cap_parameters = data.cap_evaluation_parameters if data.cap_evaluation_parameters is defined else [] %}
+<section class="report-hero">
+  <div>
+    <p class="eyebrow">Investment report</p>
+    <h1>{{ data.asset_overview.filename }}</h1>
+    <p>{{ data.final_recommendation.positioning }}</p>
+    <div class="link-row">
+      <a href="/reports/{{ report.id }}/json">JSON</a>
+      <a href="/clips/{{ clip.id }}">Clip</a>
+    </div>
+  </div>
+  <div class="score-block">
+    <span class="badge {{ data.verdict|verdict_class }}">{{ data.verdict }}</span>
+    <span class="muted">Adjusted score</span>
+    <strong>{{ data.investment_score }}</strong>
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Score Consistency</h2></div>
+    <dl class="meta">
+      <dt>Adjusted score</dt><dd>{{ scoring.adjusted_score if scoring.adjusted_score is defined else data.investment_score }}</dd>
+      <dt>Raw score</dt><dd>{{ scoring.raw_score if scoring.raw_score is defined else data.raw_investment_score }}</dd>
+      <dt>Adjusted by</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
+      <dt>Raw verdict</dt><dd>{{ scoring.raw_verdict if scoring.raw_verdict is defined else data.raw_verdict }}</dd>
+      <dt>Final verdict</dt><dd>{{ scoring.final_verdict if scoring.final_verdict is defined else data.verdict }}</dd>
+      <dt>Alignment</dt><dd>{{ scoring.score_verdict_alignment if scoring.score_verdict_alignment is defined else "aligned" }}</dd>
+    </dl>
+    <p class="muted">Adjusted score is designed to match final verdict. Raw score is the pre-cap weighted formula.</p>
+    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_only_gap" %}
+      <p class="alert">Raw and final verdict differ because of a hard verdict cap, but no consistency penalty was applied{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
+    {% endif %}
+    {% if scoring.consistency_penalty_capped is defined and scoring.consistency_penalty_capped %}
+      <p class="alert">Penalty capped at raw score; adjusted score floored at 0.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Main Adjustments</h2></div>
+    {% if penalties %}
+      <ul class="plain-list">
+        {% for item in penalties %}
+          <li><strong>{{ item.label }}</strong>: -{{ item.amount }}. {{ item.reason }}{% if item.note is defined %} {{ item.note }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No consistency adjustment applied.</p>
+    {% endif %}
+    {% if scoring_cap_reasons %}
+      <p class="muted">Verdict cap: {{ scoring_cap_reasons|join("; ") }}</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Main Bottleneck</h2></div>
+    <p class="clip-name">{{ data.main_bottleneck.label }}</p>
+    <p>{{ data.main_bottleneck.description }}</p>
+    <p class="muted">Weight: {{ data.main_bottleneck.formula_weight }}</p>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Best Fix</h2></div>
+    <p class="clip-name">{{ data.executive_summary.best_fix.description }}</p>
+    <p>{{ data.executive_summary.best_fix.recommendation }}</p>
+    <p class="muted">+{{ data.executive_summary.best_fix.expected_score_lift }} formula points</p>
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Before / After Estimate</h2></div>
+    <dl class="meta">
+      <dt>Current</dt><dd>{{ data.estimated_after_fixes.current_score if data.estimated_after_fixes else data.investment_score }}</dd>
+      <dt>After P0</dt><dd>{{ data.estimated_after_fixes.estimated_after_p0 if data.estimated_after_fixes else "-" }}</dd>
+      <dt>After P0 + P1</dt><dd>{{ data.estimated_after_fixes.estimated_after_p0_p1 if data.estimated_after_fixes else "-" }}</dd>
+      <dt>Estimated verdict</dt><dd>{{ data.estimated_after_fixes.estimated_verdict_after_p0_p1 if data.estimated_after_fixes else "-" }}</dd>
+    </dl>
+    <p class="muted">{{ data.estimated_after_fixes.notes if data.estimated_after_fixes else "Formula-based estimate, not historically validated." }}</p>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Top Edit</h2></div>
+    {% if edit_points %}
+      {% set top = edit_points[0] %}
+      <p class="clip-name">{{ top.priority }} - {{ top.description }}</p>
+      <p>{{ top.recommended_edit }}</p>
+      <p class="muted">+{{ top.expected_lift.investment }} formula points | {{ top.confidence }} confidence</p>
+    {% else %}
+      <p class="muted">No deterministic edit points found.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Verdict Cap Explanation</h2></div>
+    <p class="clip-name">Raw: {{ data.raw_verdict or data.verdict }} -> Final: {{ data.verdict }}</p>
+    {% if data.verdict_cap and data.verdict_cap.cap_reasons %}
+      <ul class="plain-list">
+        {% for reason in data.verdict_cap.cap_reasons %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No verdict cap applied.</p>
+    {% endif %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Measured Value</th>
+            <th>Threshold</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in cap_parameters %}
+            <tr>
+              <td>{{ item.parameter_name }}</td>
+              <td>{{ item.measured_value }}</td>
+              <td>{{ item.threshold }}</td>
+              <td>{{ item.resulting_penalty_or_cap }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4">No cap or P0/P1 edit parameters recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Active Content / Composition</h2></div>
+    <dl class="meta">
+      <dt>Active ratio</dt><dd>{{ data.composition.active_content_ratio if data.composition.active_content_ratio is not none else "-" }}</dd>
+      <dt>Width ratio</dt><dd>{{ data.composition.active_width_ratio if data.composition.active_width_ratio is not none else "-" }}</dd>
+      <dt>Height ratio</dt><dd>{{ data.composition.active_height_ratio if data.composition.active_height_ratio is not none else "-" }}</dd>
+      <dt>Black border</dt><dd>{{ data.composition.black_border_ratio if data.composition.black_border_ratio is not none else "-" }}</dd>
+      <dt>Pillarbox</dt><dd>{{ "yes" if data.composition.pillarbox_detected else "no" }}</dd>
+      <dt>Letterbox</dt><dd>{{ "yes" if data.composition.letterbox_detected else "no" }}</dd>
+      <dt>Small center</dt><dd>{{ "yes" if data.composition.small_center_content_detected else "no" }}</dd>
+      <dt>Confidence</dt><dd>{{ data.composition.confidence or "-" }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Strong Publish Requirements</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Requirement</th>
+          <th>Status</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in data.strong_publish_requirements %}
+          <tr>
+            <td>{{ item.label }}</td>
+            <td>{{ "pass" if item.passed else "blocked" }}</td>
+            <td>{{ item.detail }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No requirement data available.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Edit Point Timeline</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>Time</th>
+          <th>Problem</th>
+          <th>Action</th>
+          <th>Expected Lift</th>
+          <th>Confidence</th>
+          <th>Detected By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for point in edit_points %}
+          <tr>
+            <td>{{ point.priority }}</td>
+            <td>
+              {% if point.start_time is not none %}
+                {{ "%.1f"|format(point.start_time) }}{% if point.end_time is not none %}-{{ "%.1f"|format(point.end_time) }}{% endif %}s
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ point.description }}</td>
+            <td>{{ point.recommended_edit }}</td>
+            <td>+{{ point.expected_lift.investment }}</td>
+            <td>{{ point.confidence }}</td>
+            <td>{{ point.detected_by|join("/") }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7">No deterministic edit points found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Score Breakdown</h2></div>
+  <div class="score-grid">
+    {% for key, value in data.score_breakdown.items() %}
+      <div class="score-tile">
+        <span>{{ key|title }}</span>
+        <strong>{{ value }}</strong>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Evaluation Parameters</h2></div>
+  <div class="score-grid">
+    <div class="score-tile">
+      <span>Opening</span>
+      <strong>{{ data.score_breakdown.opening }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Rhythm</span>
+      <strong>{{ data.evaluation_parameters.rhythm.visual_rhythm_score if data.evaluation_parameters else "-" }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Composition</span>
+      <strong>{{ data.composition.active_content_ratio if data.composition.active_content_ratio is not none else "-" }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Audio Drops</span>
+      <strong>{{ data.evaluation_parameters.audio.audio_drop_count if data.evaluation_parameters else "-" }}</strong>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Weak Points</h2></div>
+  <ol class="weak-list">
+    {% for item in data.weak_points %}
+      <li>
+        <div>
+          <strong>{{ item.priority }} - {{ item.description }}</strong>
+          <p>{{ item.why_it_matters }}</p>
+          <p>{{ item.recommendation }}</p>
+        </div>
+        <span>+{{ item.expected_score_lift }}</span>
+      </li>
+    {% else %}
+      <li>No deterministic weak points found.</li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Retention Drawdown Timeline</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>End</th>
+          <th>Severity</th>
+          <th>Reason</th>
+          <th>Fix</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in data.retention_drawdown_timeline %}
+          <tr>
+            <td>{{ item.start_time if item.start_time is not none else "-" }}</td>
+            <td>{{ item.end_time if item.end_time is not none else "-" }}</td>
+            <td>{{ item.severity }}</td>
+            <td>{{ item.reason }}</td>
+            <td>{{ item.recommendation }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No retention drawdowns detected.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Technical Quality</h2></div>
+    <dl class="meta">
+      <dt>Brightness</dt><dd>{{ data.technical_quality.visual_metrics.avg_brightness }}</dd>
+      <dt>Sharpness</dt><dd>{{ data.technical_quality.visual_metrics.avg_sharpness }}</dd>
+      <dt>Black ratio</dt><dd>{{ data.technical_quality.visual_metrics.black_ratio }}</dd>
+      <dt>Static ratio</dt><dd>{{ data.technical_quality.visual_metrics.static_ratio }}</dd>
+    </dl>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Audio Quality</h2></div>
+    <dl class="meta">
+      <dt>Mean volume</dt><dd>{{ data.audio_quality.mean_volume_db if data.audio_quality.mean_volume_db is not none else "-" }} dB</dd>
+      <dt>Max volume</dt><dd>{{ data.audio_quality.max_volume_db if data.audio_quality.max_volume_db is not none else "-" }} dB</dd>
+      <dt>Silence ratio</dt><dd>{{ data.audio_quality.silence_ratio if data.audio_quality.silence_ratio is not none else "-" }}</dd>
+      <dt>Opening silence</dt><dd>{{ "yes" if data.audio_quality.opening_silence else "no" }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Limitations</h2></div>
+  <ul class="plain-list">
+    {% for item in data.analysis_limitations %}
+      <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

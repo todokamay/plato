@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Investment desk</p>
+    <h1>Dashboard</h1>
+  </div>
+  <a class="button primary" href="/upload">Upload Clip</a>
+</section>
+
+<section class="metric-grid">
+  <article class="metric">
+    <span>Total clips</span>
+    <strong>{{ stats.total_clips }}</strong>
+  </article>
+  <article class="metric">
+    <span>Analyzed</span>
+    <strong>{{ stats.analyzed_clips }}</strong>
+  </article>
+  <article class="metric">
+    <span>Average score</span>
+    <strong>{{ stats.average_score if stats.average_score is not none else "-" }}</strong>
+  </article>
+  <article class="metric">
+    <span>Best candidate</span>
+    <strong>{{ stats.best_clip.investment_score|round(1) if stats.best_clip else "-" }}</strong>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Verdict Distribution</h2>
+  </div>
+  <div class="verdict-grid">
+    {% for verdict, count in stats.distribution.items() %}
+      <div class="verdict-tile">
+        <span class="badge {{ verdict|verdict_class }}">{{ verdict }}</span>
+        <strong>{{ count }}</strong>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Best To Publish/Test</h2></div>
+    {% if stats.best_clip %}
+      <p class="clip-name">{{ stats.best_clip.original_filename }}</p>
+      <p><span class="badge {{ stats.best_clip.verdict|verdict_class }}">{{ stats.best_clip.verdict }}</span></p>
+      <p class="score-line">{{ stats.best_clip.investment_score|round(1) }}/100</p>
+      <a href="/clips/{{ stats.best_clip.id }}">Open clip</a>
+    {% else %}
+      <p class="muted">No analyzed clips.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Worst Clip/Reject</h2></div>
+    {% if stats.worst_clip %}
+      <p class="clip-name">{{ stats.worst_clip.original_filename }}</p>
+      <p><span class="badge {{ stats.worst_clip.verdict|verdict_class }}">{{ stats.worst_clip.verdict }}</span></p>
+      <p class="score-line">{{ stats.worst_clip.investment_score|round(1) }}/100</p>
+      <a href="/clips/{{ stats.worst_clip.id }}">Open clip</a>
+    {% else %}
+      <p class="muted">No analyzed clips.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Recent Clips</h2>
+    <a href="/clips">View all</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Score</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for clip in stats.recent_clips %}
+          <tr>
+            <td><a href="/clips/{{ clip.id }}">{{ clip.original_filename }}</a></td>
+            <td>{{ clip.status }}</td>
+            <td>{{ clip.duration|seconds }}</td>
+            <td>{{ clip.investment_score|round(1) if clip.investment_score is not none else "-" }}</td>
+            <td>
+              {% if clip.verdict %}
+                <span class="badge {{ clip.verdict|verdict_class }}">{{ clip.verdict }}</span>
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No clips yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

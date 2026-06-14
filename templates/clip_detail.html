@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block content %}
+{% set scoring = report_data.scoring if report_data and report_data.scoring is defined and report_data.scoring else {} %}
+{% set scoring_penalties = scoring.consistency_penalties if scoring.consistency_penalties is defined else [] %}
+{% set scoring_cap_reasons = scoring.cap_reasons if scoring.cap_reasons is defined else [] %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Clip</p>
+    <h1>{{ clip.original_filename }}</h1>
+  </div>
+  <div class="action-row">
+    <form method="post" action="/clips/{{ clip.id }}/analyze">
+      <button class="button primary" type="submit">Analyze</button>
+    </form>
+    <form method="post" action="/clips/{{ clip.id }}/reanalyze">
+      <button class="button" type="submit">Reanalyze</button>
+    </form>
+  </div>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Status</h2></div>
+    <p><span class="status">{{ clip.status }}</span></p>
+    {% if clip.error_message %}
+      <p class="alert">{{ clip.error_message }}</p>
+    {% endif %}
+    {% if report %}
+      <p class="score-line">{{ report.investment_score|round(1) }}/100</p>
+      <p><span class="badge {{ report.verdict|verdict_class }}">{{ report.verdict }}</span></p>
+      {% if scoring %}
+        <p class="muted">Raw score: {{ scoring.raw_score }} | Adjusted by: -{{ scoring.total_consistency_penalty }}</p>
+      {% endif %}
+      {% if report_data and report_data.verdict_cap %}
+        {% if report_data.verdict_cap.applied %}
+          <p class="alert">Verdict capped from {{ report_data.verdict_cap.raw_verdict }} to {{ report_data.verdict_cap.final_verdict }}.</p>
+        {% else %}
+          <p class="muted">No verdict cap applied.</p>
+        {% endif %}
+      {% endif %}
+      <div class="link-row">
+        <a href="/reports/{{ report.id }}">HTML report</a>
+        <a href="/reports/{{ report.id }}/json">JSON report</a>
+      </div>
+    {% else %}
+      <p class="muted">No report yet.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Metadata</h2></div>
+    <dl class="meta">
+      <dt>Duration</dt><dd>{{ clip.duration|seconds }}</dd>
+      <dt>Resolution</dt><dd>{{ clip.width or "-" }}{% if clip.width and clip.height %}x{{ clip.height }}{% endif %}</dd>
+      <dt>FPS</dt><dd>{{ clip.fps or "-" }}</dd>
+      <dt>Video bitrate</dt><dd>{{ clip.video_bitrate_kbps or "-" }} kbps</dd>
+      <dt>Audio bitrate</dt><dd>{{ clip.audio_bitrate_kbps or "-" }} kbps</dd>
+      <dt>Audio</dt><dd>{{ "yes" if clip.has_audio else "no" }}</dd>
+      <dt>Size</dt><dd>{{ clip.file_size|bytes }}</dd>
+    </dl>
+  </article>
+</section>
+
+{% if report_data %}
+{% set edit_points = report_data.edit_points if report_data.edit_points is defined else [] %}
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Score Consistency</h2></div>
+    <dl class="meta">
+      <dt>Adjusted score</dt><dd>{{ scoring.adjusted_score if scoring.adjusted_score is defined else report.investment_score }}</dd>
+      <dt>Raw score</dt><dd>{{ scoring.raw_score if scoring.raw_score is defined else report_data.raw_investment_score }}</dd>
+      <dt>Adjusted by</dt><dd>-{{ scoring.total_consistency_penalty if scoring.total_consistency_penalty is defined else 0 }}</dd>
+      <dt>Alignment</dt><dd>{{ scoring.score_verdict_alignment if scoring.score_verdict_alignment is defined else "aligned" }}</dd>
+    </dl>
+    <p class="muted">Adjusted score is formula-based and uses deterministic cap/edit evidence.</p>
+    {% if scoring.score_verdict_alignment is defined and scoring.score_verdict_alignment == "cap_only_gap" %}
+      <p class="alert">Raw and final verdict differ because of a hard verdict cap, but no consistency penalty was applied{% if scoring_cap_reasons %}: {{ scoring_cap_reasons|join("; ") }}{% endif %}.</p>
+    {% endif %}
+    {% if scoring.consistency_penalty_capped is defined and scoring.consistency_penalty_capped %}
+      <p class="alert">Penalty capped at raw score; adjusted score floored at 0.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Adjustment Reasons</h2></div>
+    {% if scoring_penalties %}
+      <ul class="plain-list">
+        {% for item in scoring_penalties[:3] %}
+          <li>{{ item.label }}: -{{ item.amount }}{% if item.note is defined %}. {{ item.note }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No consistency adjustment applied.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Before / After Estimate</h2></div>
+    <dl class="meta">
+      <dt>Current</dt><dd>{{ report_data.estimated_after_fixes.current_score if report_data.estimated_after_fixes else report.investment_score }}</dd>
+      <dt>After P0</dt><dd>{{ report_data.estimated_after_fixes.estimated_after_p0 if report_data.estimated_after_fixes else "-" }}</dd>
+      <dt>After P0 + P1</dt><dd>{{ report_data.estimated_after_fixes.estimated_after_p0_p1 if report_data.estimated_after_fixes else "-" }}</dd>
+      <dt>Est. verdict</dt><dd>{{ report_data.estimated_after_fixes.estimated_verdict_after_p0_p1 if report_data.estimated_after_fixes else "-" }}</dd>
+    </dl>
+    <p class="muted">{{ report_data.estimated_after_fixes.notes if report_data.estimated_after_fixes else "Formula-based estimate, not historically validated." }}</p>
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Main Fix</h2></div>
+    {% if edit_points %}
+      {% set top = edit_points[0] %}
+      <p class="clip-name">{{ top.priority }} - {{ top.description }}</p>
+      <p>{{ top.recommended_edit }}</p>
+      <p class="muted">+{{ top.expected_lift.investment }} formula points</p>
+    {% else %}
+      <p class="muted">No deterministic edit points found.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="split">
+  <article class="panel">
+    <div class="section-title"><h2>Verdict Cap</h2></div>
+    {% if report_data.verdict_cap and report_data.verdict_cap.cap_reasons %}
+      <ul class="plain-list">
+        {% for reason in report_data.verdict_cap.cap_reasons[:3] %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Not eligible blockers were not found for this report.</p>
+    {% endif %}
+  </article>
+  <article class="panel">
+    <div class="section-title"><h2>Active Content</h2></div>
+    <dl class="meta">
+      <dt>Active ratio</dt><dd>{{ report_data.composition.active_content_ratio if report_data.composition.active_content_ratio is not none else "-" }}</dd>
+      <dt>Width ratio</dt><dd>{{ report_data.composition.active_width_ratio if report_data.composition.active_width_ratio is not none else "-" }}</dd>
+      <dt>Height ratio</dt><dd>{{ report_data.composition.active_height_ratio if report_data.composition.active_height_ratio is not none else "-" }}</dd>
+      <dt>Black border</dt><dd>{{ report_data.composition.black_border_ratio if report_data.composition.black_border_ratio is not none else "-" }}</dd>
+      <dt>Pillarbox</dt><dd>{{ "yes" if report_data.composition.pillarbox_detected else "no" }}</dd>
+      <dt>Small center</dt><dd>{{ "yes" if report_data.composition.small_center_content_detected else "no" }}</dd>
+    </dl>
+  </article>
+</section>
+{% endif %}
+
+{% if report_data %}
+<section class="panel">
+  <div class="section-title"><h2>Top Edit Points</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>Time</th>
+          <th>Problem</th>
+          <th>Edit</th>
+          <th>Lift</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for point in edit_points[:5] %}
+          <tr>
+            <td>{{ point.priority }}</td>
+            <td>
+              {% if point.start_time is not none %}
+                {{ "%.1f"|format(point.start_time) }}{% if point.end_time is not none %}-{{ "%.1f"|format(point.end_time) }}{% endif %}s
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ point.description }}</td>
+            <td>{{ point.recommended_edit }}</td>
+            <td>+{{ point.expected_lift.investment }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No deterministic edit points found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="section-title"><h2>Preview</h2></div>
+  <video controls preload="metadata" src="/uploads/{{ clip.stored_filename }}"></video>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>Top Weak Points</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>Issue</th>
+          <th>Time</th>
+          <th>Fix</th>
+          <th>Lift</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in issues[:6] %}
+          <tr>
+            <td>{{ issue.priority }}</td>
+            <td>{{ issue.description }}</td>
+            <td>{{ issue.start_time if issue.start_time is not none else "-" }}{% if issue.end_time is not none %}-{{ issue.end_time }}{% endif %}</td>
+            <td>{{ issue.recommendation }}</td>
+            <td>+{{ issue.expected_score_lift }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No weak points available.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">New asset</p>
+    <h1>Upload</h1>
+  </div>
+</section>
+
+<section class="panel form-panel">
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/upload" enctype="multipart/form-data">
+    <label>
+      Video file
+      <input type="file" name="files" accept=".mp4,.mov,.mkv,.webm" multiple required>
+    </label>
+    <label>
+      Target platform
+      <select name="target_platform">
+        <option value="{{ target }}">{{ target }}</option>
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Upload</button>
+      <span class="muted">{{ extensions }} up to {{ max_upload_mb }} MB</span>
+    </div>
+  </form>
+</section>
+{% endblock %}
