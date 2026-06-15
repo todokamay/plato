@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from config import REPORTS_DIR, project_path
-from modules import db
+from modules import db, video_probe
 from modules.auto_fix_evaluator import evaluate_fix, verdict_rank
 from modules.auto_fix_executor import apply_auto_fix_plan
 from modules.auto_fix_planner import create_auto_fix_plan
@@ -68,6 +69,9 @@ RUN_COLUMNS = [
     "fix_accepted",
     "final_output_path",
     "final_bucket",
+    "replace_status",
+    "backup_path",
+    "replace_error",
     "failure_reason",
     "P0_before",
     "P1_before",
@@ -364,6 +368,201 @@ def _copy_final(source: Path, output_dir: Path, bucket: str, copy_results: bool,
     return str(_copy_with_suffix(source, output_dir / bucket))
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _safe_mp4_file(path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        return str(exc)
+    if path.is_symlink():
+        return "symlink paths are not replace-safe"
+    if resolved.suffix.lower() != ".mp4":
+        return "only .mp4 files can be replaced"
+    if not resolved.is_file():
+        return "path is not a file"
+    return ""
+
+
+def _next_backup_path(backup_dir: Path, original: Path) -> Path:
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = safe_filename(original.name)
+    candidate = backup_dir / safe_name
+    if not candidate.exists():
+        return candidate
+    stem = candidate.stem
+    suffix = candidate.suffix
+    for index in range(2, 10000):
+        numbered = backup_dir / f"{stem}_{index}{suffix}"
+        if not numbered.exists():
+            return numbered
+    raise RuntimeError(f"Could not find available backup name for {original}")
+
+
+def _replace_original_with_fixed(original: Path, fixed: Path, backup_dir: Path, input_root: Path) -> dict:
+    item = {
+        "filename": original.name,
+        "original_path": str(original),
+        "fixed_path": str(fixed),
+        "backup_path": "",
+        "status": "skipped",
+        "reason": "",
+    }
+    for label, path in [("original", original), ("fixed", fixed)]:
+        reason = _safe_mp4_file(path)
+        if reason:
+            item["reason"] = f"{label} path unsafe: {reason}"
+            return item
+    if not _is_under(original, input_root):
+        item["reason"] = "original path is outside input folder"
+        return item
+    if original.resolve() == fixed.resolve():
+        item["reason"] = "fixed path matches original path"
+        return item
+
+    probe = video_probe.probe_video(str(fixed))
+    item["ffprobe_ok"] = bool(probe.get("ok"))
+    if not probe.get("ok"):
+        item["reason"] = f"fixed ffprobe failed: {probe.get('error') or 'unreadable video'}"
+        return item
+
+    try:
+        backup = _next_backup_path(backup_dir, original)
+        shutil.copy2(original, backup)
+        item["backup_path"] = str(backup)
+        if backup.stat().st_size != original.stat().st_size:
+            item["reason"] = "backup size verification failed"
+            return item
+    except Exception as exc:
+        item["reason"] = f"backup failed: {exc}"
+        return item
+
+    temp = original.with_name(original.name + ".plato_replace_tmp")
+    try:
+        shutil.copy2(fixed, temp)
+        temp.replace(original)
+    except Exception as exc:
+        item["reason"] = f"replace failed: {exc}"
+        if temp.exists():
+            temp.unlink(missing_ok=True)
+        return item
+
+    item["status"] = "replaced"
+    item["reason"] = "accepted fixed clip replaced original"
+    return item
+
+
+def _replace_accepted_fixed_clips(
+    entries: list[dict],
+    *,
+    input_root: Path,
+    output_dir: Path,
+    backup_dir: str | Path | None,
+    confirm_replace: bool,
+) -> dict:
+    root = Path(backup_dir) if backup_dir else output_dir / "replace_backups"
+    log = {
+        "version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "input_root": str(input_root.resolve()),
+        "backup_dir": str(root),
+        "confirmed": bool(confirm_replace),
+        "items": [],
+    }
+    for row in entries:
+        if not row.get("auto_fix_attempted") and not row.get("fix_accepted"):
+            continue
+        fixed_path = row.get("fixed_path")
+        original = Path(row.get("original_path") or "")
+        fixed = Path(fixed_path or "")
+        if not row.get("fix_accepted"):
+            item = {
+                "filename": row.get("filename", ""),
+                "original_path": row.get("original_path", ""),
+                "fixed_path": fixed_path or "",
+                "backup_path": "",
+                "status": "skipped",
+                "reason": "fixed clip was not accepted",
+            }
+        elif not confirm_replace:
+            item = {
+                "filename": row.get("filename", ""),
+                "original_path": row.get("original_path", ""),
+                "fixed_path": fixed_path or "",
+                "backup_path": "",
+                "status": "skipped",
+                "reason": "--confirm-replace is required",
+            }
+        else:
+            item = _replace_original_with_fixed(original, fixed, root, input_root)
+        row["replace_status"] = item.get("status", "")
+        row["backup_path"] = item.get("backup_path", "")
+        row["replace_error"] = "" if item.get("status") == "replaced" else item.get("reason", "")
+        log["items"].append(item)
+    log["replaced_count"] = sum(1 for item in log["items"] if item.get("status") == "replaced")
+    log["skipped_count"] = sum(1 for item in log["items"] if item.get("status") != "replaced")
+    return log
+
+
+def rollback_replace_log(log_path: str | Path) -> dict:
+    path = Path(log_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    input_root = Path(payload.get("input_root") or ".")
+    items = []
+    for item in payload.get("items", []):
+        if item.get("status") != "replaced":
+            continue
+        original = Path(item.get("original_path") or "")
+        backup = Path(item.get("backup_path") or "")
+        result = {
+            "filename": item.get("filename", ""),
+            "original_path": str(original),
+            "backup_path": str(backup),
+            "status": "skipped",
+            "reason": "",
+        }
+        reason = _safe_mp4_file(original)
+        if reason:
+            result["reason"] = f"original path unsafe: {reason}"
+            items.append(result)
+            continue
+        if payload.get("input_root") and not _is_under(original, input_root):
+            result["reason"] = "original path is outside logged input folder"
+            items.append(result)
+            continue
+        reason = _safe_mp4_file(backup)
+        if reason:
+            result["reason"] = f"backup path unsafe: {reason}"
+            items.append(result)
+            continue
+        temp = original.with_name(original.name + ".plato_rollback_tmp")
+        try:
+            shutil.copy2(backup, temp)
+            temp.replace(original)
+            result["status"] = "restored"
+            result["reason"] = "backup restored"
+        except Exception as exc:
+            result["reason"] = f"rollback failed: {exc}"
+            if temp.exists():
+                temp.unlink(missing_ok=True)
+        items.append(result)
+    rollback = {
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "items": items,
+        "restored_count": sum(1 for item in items if item.get("status") == "restored"),
+        "failed_count": sum(1 for item in items if item.get("status") != "restored"),
+    }
+    payload["rollback"] = rollback
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": rollback["failed_count"] == 0, **rollback}
+
+
 def _create_dirs(output_dir: Path) -> None:
     for folder in [
         "original_reports",
@@ -413,6 +612,9 @@ def run_auto_qc_fix(
     allow_original_short: bool = False,
     keep_temp: bool = False,
     no_copy_original_rejects: bool = False,
+    replace_with_fixed: bool = False,
+    confirm_replace: bool = False,
+    backup_dir: str | Path | None = None,
 ) -> dict:
     db.init_db()
     folder = Path(input_folder)
@@ -439,6 +641,9 @@ def run_auto_qc_fix(
         "allow_original_short": allow_original_short,
         "keep_temp": keep_temp,
         "no_copy_original_rejects": no_copy_original_rejects,
+        "replace_with_fixed": replace_with_fixed,
+        "confirm_replace": confirm_replace,
+        "backup_dir": str(backup_dir) if backup_dir else "",
     }
 
     if dry_run:
@@ -626,6 +831,18 @@ def run_auto_qc_fix(
     for index, entry in enumerate(entries, start=1):
         entry["rank"] = index
 
+    replace_log = None
+    replace_log_path = output / "logs" / "replace_log.json"
+    if replace_with_fixed:
+        replace_log = _replace_accepted_fixed_clips(
+            entries,
+            input_root=folder,
+            output_dir=output,
+            backup_dir=backup_dir,
+            confirm_replace=confirm_replace,
+        )
+        replace_log_path.write_text(json.dumps(replace_log, ensure_ascii=False, indent=2), encoding="utf-8")
+
     paths = {
         "run_summary_json": str(output / "run_summary.json"),
         "run_summary_csv": str(output / "run_summary.csv"),
@@ -634,8 +851,12 @@ def run_auto_qc_fix(
         "run_fix_plan_json": str(plan_dir / "run_fix_plan.json"),
         "auto_fix_log": str(log_path),
     }
+    if replace_log is not None:
+        paths["replace_log_json"] = str(replace_log_path)
     counts = _counts(entries, len(files), analyzed_count, skipped_count, failed_count, len(plan_rows))
     payload = _payload(run_id, folder, output, options, entries, counts, paths)
+    if replace_log is not None:
+        payload["replace_log"] = replace_log
 
     _write_csv(output / "run_summary.csv", RUN_COLUMNS, entries)
     (output / "run_summary.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from modules.auto_qc import run_auto_qc_fix
+from modules.auto_qc import rollback_replace_log, run_auto_qc_fix
 from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT, detect_videoautopipeline_outputs
 
 
@@ -35,6 +35,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--keep-temp", action="store_true", help="Keep intermediate segment files for debugging.")
     parser.add_argument("--no-copy-original-rejects", action="store_true", help="Do not copy rejected original files.")
+    parser.add_argument("--replace-with-fixed", action="store_true", help="Replace accepted original MP4s with their accepted fixed MP4s.")
+    parser.add_argument("--confirm-replace", action="store_true", help="Required with --replace-with-fixed before originals can be overwritten.")
+    parser.add_argument("--backup-dir", help="Backup directory used before replacing originals.")
+    parser.add_argument("--rollback-replace-log", help="Restore originals from a previous replace_log.json and exit.")
     return parser.parse_args()
 
 
@@ -42,6 +46,22 @@ def main() -> int:
     args = parse_args()
     input_folder = args.input_folder
     detection = None
+
+    if args.rollback_replace_log:
+        try:
+            payload = rollback_replace_log(args.rollback_replace_log)
+        except Exception as exc:
+            if args.json:
+                print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+            else:
+                print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"restored_count: {payload.get('restored_count')}")
+            print(f"failed_count: {payload.get('failed_count')}")
+        return 0 if payload.get("ok") else 1
 
     if not input_folder and args.detect_videoautopipeline_outputs:
         detection = detect_videoautopipeline_outputs(args.videoautopipeline_root)
@@ -83,6 +103,9 @@ def main() -> int:
             allow_original_short=args.allow_original_short,
             keep_temp=args.keep_temp,
             no_copy_original_rejects=args.no_copy_original_rejects,
+            replace_with_fixed=args.replace_with_fixed,
+            confirm_replace=args.confirm_replace,
+            backup_dir=args.backup_dir,
         )
         if detection is not None:
             payload["detected_videoautopipeline_outputs"] = detection
@@ -115,8 +138,9 @@ def main() -> int:
         print(f"detected_recommended_input_folder: {detection.get('recommended_input_folder')}")
     if paths:
         print("outputs:")
-        for key in ["run_summary_json", "run_summary_csv", "run_report_html", "run_fix_plan_csv", "run_fix_plan_json", "auto_fix_log"]:
-            print(f"  {key}: {paths.get(key)}")
+        for key in ["run_summary_json", "run_summary_csv", "run_report_html", "run_fix_plan_csv", "run_fix_plan_json", "auto_fix_log", "replace_log_json"]:
+            if key in paths:
+                print(f"  {key}: {paths.get(key)}")
     return 0
 
 
