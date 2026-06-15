@@ -1,3 +1,4 @@
+# ponytail: quarantine candidate; keep until v1.2 after production validation.
 from __future__ import annotations
 
 from modules.auto_qc import recent_auto_qc_runs
