@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from config import THRESHOLDS
-from modules.scoring import VERDICT_RANK
-from modules.verdict_resolver import resolve_final_verdict, verdict_rank
+from modules.verdict_resolver import publishability_rank, resolve_final_verdict, verdict_rank
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -369,7 +368,7 @@ def _consistency_flags(
         flags.append("Adjusted score remains high for a HOLD/REJECT final verdict.")
     if cap_reasons and total_penalty < 2:
         flags.append("Verdict cap exists but score adjustment is too small to explain it.")
-    drop = VERDICT_RANK.get(raw_verdict, 0) - VERDICT_RANK.get(final_verdict, 0)
+    drop = publishability_rank(raw_verdict) - publishability_rank(final_verdict)
     if drop >= 2 and alignment not in {"aligned", "cap_limited"}:
         flags.append("Final verdict is two or more tiers below raw verdict.")
     if final_verdict != adjusted_score_verdict and verdict_rank(final_verdict) < verdict_rank(adjusted_score_verdict):

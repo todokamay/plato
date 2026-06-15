@@ -1,16 +1,5 @@
 from config import SCORE_WEIGHTS, THRESHOLDS
-from modules.verdict_resolver import verdict_from_score
-
-
-VERDICT_RANK = {
-    "REJECT": 0,
-    "HOLD": 1,
-    "HOLD / CLIP FIRST": 1.5,
-    "REWORK": 2,
-    "SAFE TO TEST": 3,
-    "PUBLISH": 4,
-    "STRONG PUBLISH": 5,
-}
+from modules.verdict_resolver import publishability_rank, verdict_from_score
 
 
 def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
@@ -239,7 +228,7 @@ def apply_verdict_caps(raw_verdict: str, investment_score: float, scores: dict, 
     def cap_to(max_verdict: str, reason: str) -> None:
         nonlocal verdict
         reasons.append(reason)
-        if VERDICT_RANK.get(verdict, 0) > VERDICT_RANK[max_verdict]:
+        if publishability_rank(verdict) > publishability_rank(max_verdict):
             verdict = max_verdict
 
     bitrate = metrics.get("video_bitrate_kbps")

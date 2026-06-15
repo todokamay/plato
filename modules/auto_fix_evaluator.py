@@ -1,17 +1,7 @@
 from __future__ import annotations
 
 from modules.portfolio_ranking import priority_counts
-
-
-VERDICT_ORDER = {
-    "REJECT": 0,
-    "HOLD": 1,
-    "HOLD / CLIP FIRST": 1,
-    "REWORK": 2,
-    "SAFE TO TEST": 3,
-    "PUBLISH": 4,
-    "STRONG PUBLISH": 5,
-}
+from modules.verdict_resolver import normalize_verdict, verdict_rank as conservative_verdict_rank
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -23,15 +13,8 @@ def _as_float(value, default: float = 0.0) -> float:
         return default
 
 
-def normalize_verdict(verdict: str | None) -> str:
-    value = (verdict or "REJECT").replace("_", " ").strip().upper()
-    if value == "SAFE TO_TEST":
-        value = "SAFE TO TEST"
-    return value
-
-
 def verdict_rank(verdict: str | None) -> int:
-    return VERDICT_ORDER.get(normalize_verdict(verdict), 0)
+    return 5 - conservative_verdict_rank(verdict)
 
 
 def _summary(report: dict | None) -> dict:

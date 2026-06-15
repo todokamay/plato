@@ -26,6 +26,17 @@ CONSERVATIVE_RANK = {
 }
 
 
+PUBLISHABILITY_RANK = {
+    "REJECT": 0,
+    "HOLD": 1,
+    "HOLD / CLIP FIRST": 1.5,
+    "REWORK": 2,
+    "SAFE TO TEST": 3,
+    "PUBLISH": 4,
+    "STRONG PUBLISH": 5,
+}
+
+
 def normalize_verdict(verdict: str | None, default: str = "REJECT") -> str:
     value = (verdict or default or "REJECT").strip().upper().replace("-", "_")
     value = " ".join(value.split())
@@ -36,6 +47,10 @@ def normalize_verdict(verdict: str | None, default: str = "REJECT") -> str:
 
 def verdict_rank(verdict: str | None) -> int:
     return CONSERVATIVE_RANK.get(normalize_verdict(verdict), CONSERVATIVE_RANK["REJECT"])
+
+
+def publishability_rank(verdict: str | None) -> float:
+    return PUBLISHABILITY_RANK.get(normalize_verdict(verdict), PUBLISHABILITY_RANK["REJECT"])
 
 
 def verdict_from_score(score: float | int | str | None) -> str:
