@@ -1,8 +1,29 @@
 {
   "profile": "dev",
+  "dry_run": true,
   "watch": {
-    "stable_seconds": 0,
+    "enabled": true,
     "poll_interval": 2,
-    "max_files_per_cycle": 3
+    "stable_seconds": 0,
+    "max_files_per_cycle": 3,
+    "recursive": false
+  },
+  "auto_fix": {
+    "enabled": false,
+    "max_fixes_per_clip": 1,
+    "min_improvement": 2.0,
+    "target_verdict": "SAFE TO TEST"
+  },
+  "queue": {
+    "max_retries": 2,
+    "cleanup_days": 7
+  },
+  "health": {
+    "min_free_disk_gb": 2,
+    "queue_warning_size": 10,
+    "queue_critical_size": 25
+  },
+  "resource_limits": {
+    "min_disk_free_ratio": 0.03
   }
 }

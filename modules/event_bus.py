@@ -8,7 +8,21 @@ from pathlib import Path
 from config import project_path
 
 
-EVENT_TYPES = {"detected", "started", "fixed", "accepted", "rejected", "rerouted", "failed"}
+EVENT_TYPES = {
+    "detected",
+    "started",
+    "fixed",
+    "accepted",
+    "rejected",
+    "rerouted",
+    "failed",
+    "completed",
+    "success",
+    "state_changed",
+    "paused",
+    "stopped",
+    "recovered",
+}
 DEFAULT_EVENT_LOG = project_path("data/events/events.jsonl")
 
 

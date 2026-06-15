@@ -161,7 +161,8 @@ def _summarize(stdout: str, stderr: str, exit_code: int) -> dict:
     return summary
 
 
-def _is_pid_running(pid: int | str | None) -> bool:
+def is_pid_running(pid: int | str | None) -> bool:
+    """Return True when pid appears to reference a live process. Never raises."""
     if not pid:
         return False
     try:
@@ -174,24 +175,37 @@ def _is_pid_running(pid: int | str | None) -> bool:
         try:
             import ctypes
 
+            windll = getattr(ctypes, "windll", None)
+            if windll is None:
+                return False
             process_query_limited_information = 0x1000
             still_active = 259
-            handle = ctypes.windll.kernel32.OpenProcess(
+            handle = windll.kernel32.OpenProcess(
                 process_query_limited_information, False, pid_int
             )
             if not handle:
                 return False
             exit_code = ctypes.c_ulong()
-            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
-            ctypes.windll.kernel32.CloseHandle(handle)
+            ok = windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            windll.kernel32.CloseHandle(handle)
             return bool(ok) and exit_code.value == still_active
         except Exception:
             return False
+    if not hasattr(os, "kill"):
+        return False
     try:
         os.kill(pid_int, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     except OSError:
         return False
     return True
+
+
+def _is_pid_running(pid: int | str | None) -> bool:
+    return is_pid_running(pid)
 
 
 def _monitor_job(job_id: str, process: subprocess.Popen, job_file: str | Path) -> None:
@@ -223,7 +237,11 @@ def refresh_running_jobs(job_file: str | Path = DEFAULT_JOB_FILE) -> None:
                 continue
             process = _PROCESSES.get(job.get("job_id"))
             if process is None:
-                if _is_pid_running(job.get("pid")):
+                try:
+                    pid_live = _is_pid_running(job.get("pid"))
+                except Exception:
+                    continue
+                if pid_live:
                     continue
                 job["status"] = "failed"
                 job["finished_at"] = utc_now()

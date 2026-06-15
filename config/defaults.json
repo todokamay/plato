@@ -1,12 +1,42 @@
 {
   "profile": "local",
+  "dry_run": false,
+  "paths": {
+    "data_dir": "data",
+    "queue_dir": "data/queue",
+    "history_dir": "data/history",
+    "logs_dir": "data/logs",
+    "jobs_dir": "data/jobs",
+    "watch_state_dir": "data/watch_state"
+  },
+  "duration_policy": {
+    "min_duration": 8.0,
+    "short_clip_min_duration": 5.0,
+    "ultra_short_threshold": 8.0,
+    "max_duration_loss_ratio": 0.15,
+    "allow_original_short": false
+  },
   "watch": {
-    "stable_seconds": 5,
+    "enabled": true,
     "poll_interval": 10,
-    "max_files_per_cycle": 10
+    "stable_seconds": 5,
+    "max_files_per_cycle": 10,
+    "recursive": false
+  },
+  "auto_fix": {
+    "enabled": false,
+    "max_fixes_per_clip": 3,
+    "min_improvement": 2.0,
+    "target_verdict": "SAFE TO TEST"
   },
   "queue": {
-    "max_attempts": 3
+    "max_retries": 3,
+    "cleanup_days": 30
+  },
+  "health": {
+    "min_free_disk_gb": 5,
+    "queue_warning_size": 20,
+    "queue_critical_size": 50
   },
   "resource_limits": {
     "min_disk_free_ratio": 0.05

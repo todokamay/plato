@@ -1,8 +1,33 @@
 {
   "profile": "continuous",
+  "dry_run": false,
   "watch": {
-    "stable_seconds": 5,
+    "enabled": true,
     "poll_interval": 10,
-    "max_files_per_cycle": 25
+    "stable_seconds": 5,
+    "max_files_per_cycle": 25,
+    "recursive": false
+  },
+  "auto_fix": {
+    "enabled": true,
+    "max_fixes_per_clip": 3,
+    "min_improvement": 2.0,
+    "target_verdict": "SAFE TO TEST"
+  },
+  "duration_policy": {
+    "allow_original_short": true,
+    "short_clip_min_duration": 5.0
+  },
+  "queue": {
+    "max_retries": 3,
+    "cleanup_days": 30
+  },
+  "health": {
+    "min_free_disk_gb": 5,
+    "queue_warning_size": 20,
+    "queue_critical_size": 50
+  },
+  "resource_limits": {
+    "min_disk_free_ratio": 0.05
   }
 }

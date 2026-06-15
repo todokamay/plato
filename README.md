@@ -126,7 +126,8 @@ py tools\run_full_validation.py
 - Portfolio buckets: `Publish Candidate`, `Safe Test`, `Quick Fix`, `High Upside Rework`, `Hold / Source Material`, and `Reject`.
 - DaVinci marker CSV and fix-plan CSV/JSON export for manual editing workflows.
 - Auto-QC pipeline that plans safe deterministic fixes, applies optional ffmpeg auto-fixes, re-analyzes fixed MP4 copies, compares before/after, and routes final outputs.
-- Auto-QC output buckets: `publish_ready`, `safe_to_test`, `fixed_publish_ready`, `fixed_safe_to_test`, `rejected`, `failed_fix`, `hold_source`, and `debug_review`.
+- Auto-QC output buckets: `publish_ready`, `safe_to_test`, `fixed_publish_ready`, `fixed_safe_to_test`, `rejected`, `failed_fix`, `hold_source`, and `debug_review`. See [`docs/verdict_to_bucket_mapping.md`](docs/verdict_to_bucket_mapping.md) for how QC verdicts map to these buckets.
+- Factory OS config profiles: `config/defaults.json` and `config/profiles/*.json`. See [`docs/config_profiles.md`](docs/config_profiles.md).
 
 ## Safety Guarantees
 

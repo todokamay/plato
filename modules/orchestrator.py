@@ -16,10 +16,28 @@ from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT, d
 
 
 ORCHESTRATOR_STATES = {"booting", "ready", "running", "recovering", "paused", "degraded", "failed", "stopped"}
+LIFECYCLE_EVENT_BY_STATE = {
+    "booting": "state_changed",
+    "ready": "state_changed",
+    "running": "started",
+    "recovering": "state_changed",
+    "paused": "paused",
+    "degraded": "state_changed",
+    "failed": "failed",
+    "stopped": "stopped",
+}
 START_COMMAND = (
     r"py tools\run_orchestrator.py --detect-videoautopipeline-outputs --watch "
     r"--auto-fix --copy-results --allow-original-short --short-clip-min-duration 5"
 )
+
+
+def lifecycle_event_type(state: str, reason: str = "") -> str:
+    if reason == "single cycle complete":
+        return "completed"
+    if reason == "recovery complete":
+        return "recovered"
+    return LIFECYCLE_EVENT_BY_STATE.get(state, "state_changed")
 
 
 @dataclass
@@ -61,8 +79,9 @@ class VideoFactoryOrchestrator:
         if state not in ORCHESTRATOR_STATES:
             raise ValueError(f"Unsupported orchestrator state: {state}")
         self.state = state
-        payload = {"state": state, "reason": reason}
-        self.events.publish("started" if state == "running" else "detected", payload, source="orchestrator")
+        payload = {"state": state, "lifecycle_state": state, "reason": reason}
+        event_type = lifecycle_event_type(state, reason)
+        self.events.publish(event_type, payload, source="orchestrator")
         write_log(f"orchestrator state={state} {reason}".strip(), source="orchestrator")
         return payload
 
