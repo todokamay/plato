@@ -145,6 +145,29 @@ py tools\run_orchestrator.py --detect-videoautopipeline-outputs --watch --auto-f
 </section>
 
 <section class="panel">
+  <div class="section-title"><h2>Production Diagnostics</h2><a href="/api/production-diagnostics">JSON</a></div>
+  {% set diag = production_diagnostics %}
+  <dl class="meta">
+    <dt>Latest Auto QC Run</dt><dd>{{ diag.latest_runs.auto_qc.run_id or "-" }}</dd>
+    <dt>Latest Batch QC Run</dt><dd>{{ diag.latest_runs.batch_qc.batch_id or "-" }}</dd>
+    <dt>Replace Status</dt><dd>{{ diag.replace.status }}</dd>
+    <dt>Queue Total</dt><dd>{{ diag.queue.total }}</dd>
+    <dt>Current Job</dt><dd>{{ diag.jobs.current_job.job_type if diag.jobs.current_job else "-" }}</dd>
+    <dt>Health</dt><dd>{{ diag.health.state }}</dd>
+  </dl>
+  <p class="muted">Export command:</p>
+  <pre class="command-block">py tools\export_production_diagnostics.py</pre>
+  <div class="section-title"><h2>What To Do Next</h2></div>
+  <ul class="plain-list">
+    {% for item in diag.recommendations %}
+      <li>{{ item }}</li>
+    {% else %}
+      <li>No diagnostics recommendations yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
   <div class="section-title"><h2>Logs</h2></div>
   {% if logs %}
     <div class="table-wrap">

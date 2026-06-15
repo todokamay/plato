@@ -67,6 +67,13 @@
       <button id="watch-stop" type="button">Stop Watch Mode</button>
     </div>
   </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>8. Production Diagnostics</h2></div>
+    <p class="muted">Export a sanitized diagnostics bundle for debugging. No video files or SQLite databases are included.</p>
+    <pre class="command-block">py tools\export_production_diagnostics.py</pre>
+    <button id="export-production-diagnostics" type="button">Export Production Diagnostics</button>
+  </article>
 </section>
 
 <section class="split">
@@ -139,6 +146,7 @@ const buttons = {
   autoQc: document.getElementById("auto-qc-once"),
   autoQcReplace: document.getElementById("auto-qc-replace-once"),
   rollbackReplace: document.getElementById("rollback-replace"),
+  exportDiagnostics: document.getElementById("export-production-diagnostics"),
   batchQc: document.getElementById("batch-qc-once"),
   watchStart: document.getElementById("watch-start"),
   watchStop: document.getElementById("watch-stop"),
@@ -177,6 +185,7 @@ function setBusy(running) {
   buttons.autoQc.disabled = running;
   buttons.autoQcReplace.disabled = running;
   buttons.rollbackReplace.disabled = running;
+  buttons.exportDiagnostics.disabled = running;
   buttons.batchQc.disabled = running;
   buttons.watchStart.disabled = running;
   buttons.dryRun.disabled = running;
@@ -262,6 +271,10 @@ buttons.autoQcReplace.addEventListener("click", async () => {
 });
 buttons.rollbackReplace.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/rollback-replace-log", {log_path: rollbackLogInput.value.trim()}));
+  refreshStatus();
+});
+buttons.exportDiagnostics.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/export-production-diagnostics"));
   refreshStatus();
 });
 buttons.batchQc.addEventListener("click", async () => {

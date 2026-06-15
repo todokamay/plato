@@ -12,11 +12,13 @@ from modules.operator_actions import (
     start_batch_qc_job,
     start_detect_job,
     start_dry_run_job,
+    start_production_diagnostics_job,
     start_replace_rollback_job,
     start_watch_job,
     stop_watch_job,
 )
 from modules.orchestrator import orchestrator_status
+from modules.production_diagnostics import production_diagnostics_snapshot
 from modules.queue_engine import queue_stats
 from modules.report_center import report_payload
 
@@ -56,6 +58,11 @@ def api_history():
     return _safe_payload(lambda: {"summary": history_summary(), "entries": history_entries(limit=100)}, {"summary": {}, "entries": []})
 
 
+@router.get("/production-diagnostics")
+def api_production_diagnostics():
+    return _safe_payload(lambda: production_diagnostics_snapshot(include_checks=False), {"ok": False, "latest_runs": {}, "recommendations": []})
+
+
 async def _json_body(request: Request) -> dict:
     try:
         data = await request.json()
@@ -85,6 +92,11 @@ def api_operator_detect():
 @router.post("/operator/dry-run")
 def api_operator_dry_run():
     return _safe_payload(start_dry_run_job, {"ok": False, "error": "Could not start dry run."})
+
+
+@router.post("/operator/export-production-diagnostics")
+def api_operator_export_production_diagnostics():
+    return _safe_payload(start_production_diagnostics_job, {"ok": False, "error": "Could not export production diagnostics."})
 
 
 @router.post("/operator/auto-qc-once")

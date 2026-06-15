@@ -26,6 +26,7 @@ from modules.log_center import recent_logs
 from modules.orchestrator import orchestrator_status
 from modules.operator_actions import operator_status as operator_wizard_status
 from modules.pipeline import analyze_clip
+from modules.production_diagnostics import production_diagnostics_snapshot
 from modules.queue_engine import queue_stats
 from modules.replace_diagnostics import replace_diagnostics
 from modules.report_center import report_payload
@@ -184,6 +185,7 @@ def control_center_page(request: Request):
             "detector": detect_videoautopipeline_outputs(),
             "latest_run": runs[0] if runs else None,
             "replace": replace_diagnostics(),
+            "production_diagnostics": production_diagnostics_snapshot(include_checks=False),
         },
     )
 

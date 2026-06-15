@@ -67,6 +67,12 @@ ACTION_DEFINITIONS = {
         "requires_log_path": True,
         "cancellable": False,
     },
+    "export_production_diagnostics": {
+        "display": r"py tools\export_production_diagnostics.py",
+        "args": ["tools/export_production_diagnostics.py"],
+        "requires_folder": False,
+        "cancellable": False,
+    },
     "start_watch_mode": {
         "display": r"py tools\watch_videoautopipeline_outputs.py SELECTED_FOLDER --auto-fix --copy-results --allow-original-short --short-clip-min-duration 5",
         "args": [

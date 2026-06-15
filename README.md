@@ -117,6 +117,16 @@ py tools\replace_diagnostics.py --json
 
 See [`docs/safe_replace_mode.md`](docs/safe_replace_mode.md).
 
+Production diagnostics and clip decision explanations:
+
+```powershell
+py tools\export_production_diagnostics.py
+py tools\export_production_diagnostics.py --json
+py tools\explain_clip_decision.py data\auto_qc_runs\run_YYYYMMDD_HHMMSS\run_summary.json --clip FILENAME
+```
+
+See [`docs/production_diagnostics.md`](docs/production_diagnostics.md).
+
 Run tests:
 
 ```powershell

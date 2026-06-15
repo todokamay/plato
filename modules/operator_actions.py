@@ -193,6 +193,10 @@ def start_replace_rollback_job(log_path: str | Path | None) -> dict:
     return {"ok": True, "job": start_job("rollback_replace_log", log_path=validation["log_path"]), "log_path": validation["log_path"]}
 
 
+def start_production_diagnostics_job() -> dict:
+    return {"ok": True, "job": start_job("export_production_diagnostics")}
+
+
 def start_batch_qc_job(folder: str | Path | None) -> dict:
     return _start_folder_job("run_batch_qc_once", folder)
 
