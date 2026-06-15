@@ -8,9 +8,11 @@ from modules.job_runner import get_job, list_jobs
 from modules.operator_actions import (
     operator_status,
     start_auto_qc_job,
+    start_auto_qc_replace_job,
     start_batch_qc_job,
     start_detect_job,
     start_dry_run_job,
+    start_replace_rollback_job,
     start_watch_job,
     stop_watch_job,
 )
@@ -66,6 +68,10 @@ def _folder_from_body(data: dict) -> str:
     return str(data.get("folder") or data.get("input_folder") or "").strip()
 
 
+def _text_from_body(data: dict, key: str) -> str:
+    return str(data.get(key) or "").strip()
+
+
 @router.get("/operator/status")
 def api_operator_status():
     return _safe_payload(operator_status, {"ok": False, "jobs": {}, "queue": {}})
@@ -85,6 +91,29 @@ def api_operator_dry_run():
 async def api_operator_auto_qc_once(request: Request):
     data = await _json_body(request)
     return _safe_payload(lambda: start_auto_qc_job(_folder_from_body(data)), {"ok": False, "error": "Could not start Auto QC."})
+
+
+@router.post("/operator/auto-qc-replace-once")
+async def api_operator_auto_qc_replace_once(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_auto_qc_replace_job(
+            _folder_from_body(data),
+            _text_from_body(data, "backup_dir"),
+            replace_enabled=bool(data.get("replace_enabled")),
+            replace_confirmed=bool(data.get("replace_confirmed")),
+        ),
+        {"ok": False, "error": "Could not start Safe Replace Auto QC."},
+    )
+
+
+@router.post("/operator/rollback-replace-log")
+async def api_operator_rollback_replace_log(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_replace_rollback_job(_text_from_body(data, "log_path")),
+        {"ok": False, "error": "Could not start Safe Replace rollback."},
+    )
 
 
 @router.post("/operator/batch-qc-once")

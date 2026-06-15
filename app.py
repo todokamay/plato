@@ -27,6 +27,7 @@ from modules.orchestrator import orchestrator_status
 from modules.operator_actions import operator_status as operator_wizard_status
 from modules.pipeline import analyze_clip
 from modules.queue_engine import queue_stats
+from modules.replace_diagnostics import replace_diagnostics
 from modules.report_center import report_payload
 from modules.videoautopipeline_detector import detect_videoautopipeline_outputs
 from modules.video_probe import probe_video
@@ -182,6 +183,7 @@ def control_center_page(request: Request):
             "watch_state": load_state(DEFAULT_STATE_FILE),
             "detector": detect_videoautopipeline_outputs(),
             "latest_run": runs[0] if runs else None,
+            "replace": replace_diagnostics(),
         },
     )
 

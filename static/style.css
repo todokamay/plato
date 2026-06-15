@@ -323,6 +323,22 @@ select {
   padding: 9px 10px;
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0;
+}
+
+.check-row input {
+  width: auto;
+  min-height: auto;
+}
+
+.bad-action {
+  border-color: rgba(255, 92, 108, 0.55);
+}
+
 .alert {
   padding: 10px 12px;
   margin-bottom: 14px;

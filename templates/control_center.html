@@ -127,6 +127,24 @@ py tools\run_orchestrator.py --detect-videoautopipeline-outputs --watch --auto-f
 </section>
 
 <section class="panel">
+  <div class="section-title"><h2>Safe Replace Status</h2></div>
+  {% if replace.latest_log %}
+    <dl class="meta">
+      <dt>Status</dt><dd>{{ replace.status }}</dd>
+      <dt>Latest log</dt><dd class="path-text">{{ replace.latest_log }}</dd>
+      <dt>Replacements</dt><dd>{{ replace.total_replacements }}</dd>
+      <dt>Rollback available</dt><dd>{{ replace.rollback_available }}</dd>
+      <dt>Missing backups</dt><dd>{{ replace.missing_backups|length }}</dd>
+    </dl>
+    {% if replace.missing_backups %}
+      <p class="alert">One or more backups referenced by the latest replace log are missing.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Replace mode never used. Default Auto QC remains copy-only.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
   <div class="section-title"><h2>Logs</h2></div>
   {% if logs %}
     <div class="table-wrap">

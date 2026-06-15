@@ -7,6 +7,7 @@ from config import project_path
 from modules.batch_qc import scan_video_files
 from modules.job_runner import operator_state, start_job, stop_running_watch
 from modules.queue_engine import queue_stats
+from modules.replace_diagnostics import replace_diagnostics
 from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT, detect_videoautopipeline_outputs
 
 
@@ -84,6 +85,60 @@ def validate_operator_folder(folder: str | Path | None) -> dict:
     return {"ok": True, "folder": str(path), "mp4_count": len(mp4s), "video_count": len(videos), "warnings": warnings}
 
 
+def _unsafe_root_reason(path: Path, label: str) -> str:
+    project_root = _project_root()
+    dangerous = {
+        str(project_root).lower(): f"Project root is not a safe {label}.",
+        str(_user_home()).lower(): f"User home root is too broad for a {label}.",
+        str(_drive_root(path)).lower(): f"Drive root is not a safe {label}.",
+    }
+    system_roots = [
+        os.environ.get("SystemRoot"),
+        os.environ.get("WINDIR"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+    ]
+    for root in system_roots:
+        if root:
+            dangerous[str(Path(root).resolve()).lower()] = f"Windows/system folders are not a safe {label}."
+    return dangerous.get(str(path).lower(), "")
+
+
+def validate_backup_dir(backup_dir: str | Path | None, input_folder: str | Path | None = None) -> dict:
+    value = str(backup_dir or "").strip().strip('"')
+    if not value:
+        return {"ok": False, "backup_dir": "", "error": "Backup directory is required."}
+    raw = Path(value)
+    if not raw.is_absolute():
+        raw = project_path(raw)
+    path = raw.resolve()
+    reason = _unsafe_root_reason(path, "backup directory")
+    if reason:
+        return {"ok": False, "backup_dir": str(path), "error": reason}
+    if path.exists() and not path.is_dir():
+        return {"ok": False, "backup_dir": str(path), "error": "Backup path exists but is not a directory."}
+    if input_folder:
+        source = resolve_operator_folder(input_folder)
+        if path == source:
+            return {"ok": False, "backup_dir": str(path), "error": "Backup directory cannot be the input folder."}
+    return {"ok": True, "backup_dir": str(path)}
+
+
+def validate_replace_log(log_path: str | Path | None) -> dict:
+    value = str(log_path or "").strip().strip('"')
+    if not value:
+        return {"ok": False, "log_path": "", "error": "Replace log path is required."}
+    raw = Path(value)
+    if not raw.is_absolute():
+        raw = project_path(raw)
+    path = raw.resolve()
+    if path.name != "replace_log.json":
+        return {"ok": False, "log_path": str(path), "error": "Rollback requires a replace_log.json file."}
+    if not path.exists() or not path.is_file():
+        return {"ok": False, "log_path": str(path), "error": f"Replace log not found: {path}"}
+    return {"ok": True, "log_path": str(path)}
+
+
 def detect_outputs() -> dict:
     detection = detect_videoautopipeline_outputs(DEFAULT_VIDEOAUTOPIPELINE_ROOT)
     if not detection.get("found"):
@@ -112,6 +167,32 @@ def start_auto_qc_job(folder: str | Path | None) -> dict:
     return _start_folder_job("run_auto_qc_once", folder)
 
 
+def start_auto_qc_replace_job(
+    folder: str | Path | None,
+    backup_dir: str | Path | None,
+    *,
+    replace_enabled: bool = False,
+    replace_confirmed: bool = False,
+) -> dict:
+    if not replace_enabled or not replace_confirmed:
+        return {"ok": False, "error": "Safe Replace requires both explicit checkboxes."}
+    validation = validate_operator_folder(folder)
+    if not validation["ok"]:
+        return {"ok": False, "error": validation["error"], "folder": validation.get("folder"), "suggested": suggested_empty_state()}
+    backup = validate_backup_dir(backup_dir, validation["folder"])
+    if not backup["ok"]:
+        return {"ok": False, "error": backup["error"], "backup_dir": backup.get("backup_dir")}
+    job = start_job("auto_qc_replace_once", folder=validation["folder"], backup_dir=backup["backup_dir"])
+    return {"ok": True, "job": job, "folder": validation["folder"], "backup_dir": backup["backup_dir"], "warnings": validation.get("warnings", [])}
+
+
+def start_replace_rollback_job(log_path: str | Path | None) -> dict:
+    validation = validate_replace_log(log_path)
+    if not validation["ok"]:
+        return {"ok": False, "error": validation["error"], "log_path": validation.get("log_path")}
+    return {"ok": True, "job": start_job("rollback_replace_log", log_path=validation["log_path"]), "log_path": validation["log_path"]}
+
+
 def start_batch_qc_job(folder: str | Path | None) -> dict:
     return _start_folder_job("run_batch_qc_once", folder)
 
@@ -131,5 +212,6 @@ def operator_status() -> dict:
         "detection": detect_outputs(),
         "jobs": state,
         "queue": queue_stats(),
+        "replace": replace_diagnostics(),
         "suggested": suggested_empty_state(),
     }

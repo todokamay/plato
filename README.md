@@ -71,6 +71,8 @@ The wizard can:
 - accept a manual folder path such as `data\temp\manual_videoautopipeline_outputs`
 - run a dry-run validation
 - run one-shot Auto QC for a selected folder
+- run one-shot Auto QC with Safe Replace only after explicit backup/replace confirmation
+- roll back a prior Safe Replace run from `replace_log.json`
 - run one-shot Batch QC for a selected folder
 - start and stop one continuous watcher
 - show job status, stdout/stderr tails, queue size, and next steps
@@ -105,6 +107,16 @@ Automated QC with conservative ffmpeg fixes:
 py tools\auto_qc_fix_folder.py "C:\Users\User\Desktop\Work\VideoAutoPipeline\outputs" --auto-fix --copy-results
 ```
 
+Safe Replace Mode is opt-in and replaces only accepted fixed MP4 clips after creating backups:
+
+```powershell
+py tools\auto_qc_fix_folder.py SELECTED_FOLDER --auto-fix --copy-results --allow-original-short --replace-with-fixed --confirm-replace --backup-dir data\replace_backups
+py tools\auto_qc_fix_folder.py --rollback-replace-log data\auto_qc_runs\run_YYYYMMDD_HHMMSS\logs\replace_log.json
+py tools\replace_diagnostics.py --json
+```
+
+See [`docs/safe_replace_mode.md`](docs/safe_replace_mode.md).
+
 Run tests:
 
 ```powershell
@@ -132,8 +144,10 @@ py tools\run_full_validation.py
 ## Safety Guarantees
 
 - No destructive editing.
-- Optional conservative ffmpeg auto-fix exists, originals are never modified.
-- Original files are not moved, deleted, or overwritten.
+- Default Auto QC is copy-only.
+- Optional conservative ffmpeg auto-fix writes fixed outputs as new files.
+- Original files are not moved, deleted, or overwritten unless Safe Replace Mode is explicitly enabled and confirmed.
+- Safe Replace Mode creates a backup first, verifies the accepted fixed MP4 with ffprobe, writes `replace_log.json`, and supports rollback.
 - Fixed outputs are written as new MP4 files under run output folders.
 - Result folders receive copies only when `--copy-results` is used.
 - Operator Wizard jobs use `subprocess` with `shell=False` and a strict allow-list of Plato commands.

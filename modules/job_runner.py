@@ -43,6 +43,30 @@ ACTION_DEFINITIONS = {
         "requires_folder": True,
         "cancellable": False,
     },
+    "auto_qc_replace_once": {
+        "display": r"py tools\auto_qc_fix_folder.py SELECTED_FOLDER --auto-fix --copy-results --allow-original-short --replace-with-fixed --confirm-replace --backup-dir BACKUP_DIR",
+        "args": [
+            "tools/auto_qc_fix_folder.py",
+            "{folder}",
+            "--auto-fix",
+            "--copy-results",
+            "--allow-original-short",
+            "--replace-with-fixed",
+            "--confirm-replace",
+            "--backup-dir",
+            "{backup_dir}",
+        ],
+        "requires_folder": True,
+        "requires_backup_dir": True,
+        "cancellable": False,
+    },
+    "rollback_replace_log": {
+        "display": r"py tools\auto_qc_fix_folder.py --rollback-replace-log LOG_PATH",
+        "args": ["tools/auto_qc_fix_folder.py", "--rollback-replace-log", "{log_path}"],
+        "requires_folder": False,
+        "requires_log_path": True,
+        "cancellable": False,
+    },
     "start_watch_mode": {
         "display": r"py tools\watch_videoautopipeline_outputs.py SELECTED_FOLDER --auto-fix --copy-results --allow-original-short --short-clip-min-duration 5",
         "args": [
@@ -124,21 +148,37 @@ def list_jobs(limit: int = 20, job_file: str | Path = DEFAULT_JOB_FILE) -> list[
     return list(reversed(jobs[-limit:]))
 
 
-def _replace_folder_args(args: list[str], folder: str | None) -> list[str]:
+def _replace_args(args: list[str], values: dict[str, str | None]) -> list[str]:
     output = []
     for item in args:
-        output.append(str(folder) if item == "{folder}" else item)
+        output.append(str(values.get(item.strip("{}")) or "") if item.startswith("{") and item.endswith("}") else item)
     return output
 
 
-def _command_for_action(action: str, folder: str | None = None) -> tuple[list[str], str]:
+def _command_for_action(
+    action: str,
+    folder: str | None = None,
+    *,
+    backup_dir: str | None = None,
+    log_path: str | None = None,
+) -> tuple[list[str], str]:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
         raise ValueError(f"Unsupported operator action: {action}")
     if definition.get("requires_folder") and not folder:
         raise ValueError("A folder path is required for this action.")
-    args = [sys.executable, *_replace_folder_args(definition["args"], folder)]
-    display = definition["display"].replace("SELECTED_FOLDER", folder or "")
+    if definition.get("requires_backup_dir") and not backup_dir:
+        raise ValueError("A backup directory is required for this action.")
+    if definition.get("requires_log_path") and not log_path:
+        raise ValueError("A replace log path is required for this action.")
+    values = {"folder": folder, "backup_dir": backup_dir, "log_path": log_path}
+    args = [sys.executable, *_replace_args(definition["args"], values)]
+    display = (
+        definition["display"]
+        .replace("SELECTED_FOLDER", folder or "")
+        .replace("BACKUP_DIR", backup_dir or "")
+        .replace("LOG_PATH", log_path or "")
+    )
     return args, display
 
 
@@ -265,11 +305,18 @@ def refresh_running_jobs(job_file: str | Path = DEFAULT_JOB_FILE) -> None:
             save_jobs(state, job_file)
 
 
-def start_job(action: str, *, folder: str | None = None, job_file: str | Path = DEFAULT_JOB_FILE) -> dict:
+def start_job(
+    action: str,
+    *,
+    folder: str | None = None,
+    backup_dir: str | None = None,
+    log_path: str | None = None,
+    job_file: str | Path = DEFAULT_JOB_FILE,
+) -> dict:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
         raise ValueError(f"Unsupported operator action: {action}")
-    args, display = _command_for_action(action, folder)
+    args, display = _command_for_action(action, folder, backup_dir=backup_dir, log_path=log_path)
     with _LOCK:
         state = load_jobs(job_file)
         if definition.get("singleton") and _running_watch_job(state):

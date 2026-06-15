@@ -39,13 +39,28 @@
   </article>
 
   <article class="panel operator-step">
-    <div class="section-title"><h2>5. Batch QC Once</h2></div>
+    <div class="section-title"><h2>5. Safe Replace Mode</h2></div>
+    <p class="muted">Default mode is copy-only. Replace mode creates backups first. Only accepted fixed clips replace originals. Rollback uses replace_log.json.</p>
+    <label class="check-row"><input id="replace-enabled" type="checkbox"> Enable Safe Replace Mode</label>
+    <label class="check-row"><input id="replace-confirmed" type="checkbox"> I understand originals may be replaced after backup</label>
+    <label for="backup-dir-input">Backup directory</label>
+    <input id="backup-dir-input" type="text" value="data\replace_backups" placeholder="data\replace_backups">
+    <label for="rollback-log-input">Rollback log path</label>
+    <input id="rollback-log-input" type="text" value="{{ operator.replace.latest_log or '' }}" placeholder="data\auto_qc_runs\run_YYYYMMDD_HHMMSS\logs\replace_log.json">
+    <div class="action-row">
+      <button id="auto-qc-replace-once" class="bad-action" type="button">Run Auto QC Once with Safe Replace</button>
+      <button id="rollback-replace" type="button">Rollback Last Replace</button>
+    </div>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>6. Batch QC Once</h2></div>
     <p class="muted">Analyze and route a folder once without starting continuous watch mode.</p>
     <button id="batch-qc-once" type="button">Run Batch QC Once</button>
   </article>
 
   <article class="panel operator-step">
-    <div class="section-title"><h2>6. Continuous Watch Mode</h2></div>
+    <div class="section-title"><h2>7. Continuous Watch Mode</h2></div>
     <p class="muted">Start or stop one background watcher for the selected folder.</p>
     <div class="action-row">
       <button id="watch-start" type="button">Start Watch Mode</button>
@@ -60,6 +75,8 @@
     <dl class="meta">
       <dt>Watch mode</dt><dd id="watch-status">-</dd>
       <dt>Queue size</dt><dd id="queue-size">-</dd>
+      <dt>Safe replace</dt><dd id="replace-status">{{ operator.replace.status }}</dd>
+      <dt>Latest replace log</dt><dd id="replace-log" class="path-text">{{ operator.replace.latest_log or "-" }}</dd>
       <dt>Current job</dt><dd id="current-job">-</dd>
       <dt>Last job</dt><dd id="last-job">-</dd>
     </dl>
@@ -92,7 +109,8 @@
   <ul class="plain-list">
     <li>Browser actions use predefined Plato commands only.</li>
     <li>No arbitrary shell command input is accepted.</li>
-    <li>Original MP4 files are never modified, moved, deleted, or overwritten.</li>
+    <li>Default mode is copy-only.</li>
+    <li>Original MP4 files are replaced only when Safe Replace is enabled and confirmed.</li>
     <li>Auto QC writes fixed outputs, reports, logs, and state files under <code>data/</code>.</li>
   </ul>
 </section>
@@ -109,10 +127,18 @@ const queueSize = document.getElementById("queue-size");
 const currentJob = document.getElementById("current-job");
 const lastJob = document.getElementById("last-job");
 const resultSummary = document.getElementById("result-summary");
+const replaceEnabled = document.getElementById("replace-enabled");
+const replaceConfirmed = document.getElementById("replace-confirmed");
+const backupDirInput = document.getElementById("backup-dir-input");
+const rollbackLogInput = document.getElementById("rollback-log-input");
+const replaceStatus = document.getElementById("replace-status");
+const replaceLog = document.getElementById("replace-log");
 const buttons = {
   detect: document.getElementById("detect-outputs"),
   dryRun: document.getElementById("dry-run"),
   autoQc: document.getElementById("auto-qc-once"),
+  autoQcReplace: document.getElementById("auto-qc-replace-once"),
+  rollbackReplace: document.getElementById("rollback-replace"),
   batchQc: document.getElementById("batch-qc-once"),
   watchStart: document.getElementById("watch-start"),
   watchStop: document.getElementById("watch-stop"),
@@ -138,8 +164,19 @@ function folderPayload() {
   return {folder: folderInput.value.trim()};
 }
 
+function replacePayload() {
+  return {
+    folder: folderInput.value.trim(),
+    backup_dir: backupDirInput.value.trim(),
+    replace_enabled: replaceEnabled.checked,
+    replace_confirmed: replaceConfirmed.checked,
+  };
+}
+
 function setBusy(running) {
   buttons.autoQc.disabled = running;
+  buttons.autoQcReplace.disabled = running;
+  buttons.rollbackReplace.disabled = running;
   buttons.batchQc.disabled = running;
   buttons.watchStart.disabled = running;
   buttons.dryRun.disabled = running;
@@ -164,8 +201,14 @@ async function refreshStatus() {
   const current = state.current_job || null;
   const last = state.last_job || null;
   const queue = status.queue || {};
+  const replace = status.replace || {};
   watchStatus.textContent = watch.running ? "running" : "stopped";
   queueSize.textContent = queue.total ?? 0;
+  replaceStatus.textContent = replace.status || "never_used";
+  replaceLog.textContent = replace.latest_log || "-";
+  if (replace.latest_log && !rollbackLogInput.value.trim()) {
+    rollbackLogInput.value = replace.latest_log;
+  }
   currentJob.textContent = current ? `${current.job_type} (${current.status})` : "-";
   lastJob.textContent = last ? `${last.job_type} (${last.status})` : "-";
   stdoutTail.textContent = (last && last.stdout_tail) || "-";
@@ -207,6 +250,18 @@ buttons.dryRun.addEventListener("click", async () => {
 });
 buttons.autoQc.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/auto-qc-once", folderPayload()));
+  refreshStatus();
+});
+buttons.autoQcReplace.addEventListener("click", async () => {
+  if (!replaceEnabled.checked || !replaceConfirmed.checked) {
+    showActionResult({ok: false, error: "Safe Replace requires both checkboxes."});
+    return;
+  }
+  showActionResult(await postJson("/api/operator/auto-qc-replace-once", replacePayload()));
+  refreshStatus();
+});
+buttons.rollbackReplace.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/rollback-replace-log", {log_path: rollbackLogInput.value.trim()}));
   refreshStatus();
 });
 buttons.batchQc.addEventListener("click", async () => {
