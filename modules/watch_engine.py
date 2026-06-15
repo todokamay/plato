@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from config import project_path
+from modules import watch_folder
+from modules.auto_qc import run_auto_qc_fix
 from modules.queue_engine import QueueEngine
 from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT, detect_videoautopipeline_outputs
-from modules.watch_folder import WatchOptions, run_watch_cycle
+from modules.watch_folder import WatchExecutor, WatchOptions
 
 
 DEFAULT_MANUAL_IMPORTS = project_path("data/manual_imports")
@@ -39,6 +44,44 @@ def discover_watch_sources(videoautopipeline_root: str | Path = DEFAULT_VIDEOAUT
     if DEFAULT_MANUAL_IMPORTS.exists():
         sources.append(WatchSource("manual_imports", DEFAULT_MANUAL_IMPORTS, recursive=True))
     return sources
+
+
+def _output_dir(base_output_dir: str | Path | None, cycle_id: str) -> Path | None:
+    if not base_output_dir:
+        return None
+    return Path(base_output_dir) / cycle_id
+
+
+def run_auto_qc_executor(staging_dir: Path, options: WatchOptions, cycle_id: str, ready_count: int) -> dict:
+    return run_auto_qc_fix(
+        staging_dir,
+        auto_fix=options.auto_fix,
+        copy_results=options.copy_results,
+        output_dir=_output_dir(options.output_dir, cycle_id),
+        limit=ready_count,
+        allow_original_short=options.allow_original_short,
+        short_clip_min_duration=options.short_clip_min_duration,
+        force=True,
+    )
+
+
+def run_watch_cycle(
+    options: WatchOptions,
+    *,
+    now_func: Callable[[], datetime] = watch_folder.utc_now,
+    executor: WatchExecutor = run_auto_qc_executor,
+) -> dict:
+    return watch_folder.run_watch_cycle(options, now_func=now_func, executor=executor)
+
+
+def run_watch(
+    options: WatchOptions,
+    *,
+    now_func: Callable[[], datetime] = watch_folder.utc_now,
+    sleep_func: Callable[[float], None] = time.sleep,
+    executor: WatchExecutor = run_auto_qc_executor,
+) -> list[dict]:
+    return watch_folder.run_watch(options, now_func=now_func, sleep_func=sleep_func, executor=executor)
 
 
 class WatchEngine:

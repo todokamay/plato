@@ -8,15 +8,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import project_path
-from modules import watch_folder
 from modules.watch_folder import WatchOptions, load_state, resolve_watch_folder, run_watch, run_watch_cycle
 
 
-def fake_runner(calls):
-    def _run(input_folder, **kwargs):
-        folder = Path(input_folder)
+def fake_executor(calls):
+    def _run(staging_dir, options, cycle_id, ready_count):
+        folder = Path(staging_dir)
         filenames = sorted(path.name for path in folder.glob("*.mp4"))
-        calls.append({"input_folder": folder, "filenames": filenames, "kwargs": kwargs})
+        calls.append(
+            {
+                "input_folder": folder,
+                "filenames": filenames,
+                "options": options,
+                "cycle_id": cycle_id,
+                "ready_count": ready_count,
+            }
+        )
         return {
             "run_id": f"fake_run_{len(calls)}",
             "counts": {"scanned_count": len(filenames)},
@@ -64,15 +71,13 @@ def write(path: Path, data: bytes = b"video") -> Path:
 def test_detects_mp4_and_ignores_non_mp4():
     root = make_root()
     calls = []
-    original = watch_folder.run_auto_qc_fix
     try:
         watch = root / "watch"
         source = write(watch / "new_clip.mp4")
         write(watch / "notes.txt", b"not video")
         before = source.stat()
-        watch_folder.run_auto_qc_fix = fake_runner(calls)
 
-        payload = run_watch_cycle(options(root))
+        payload = run_watch_cycle(options(root), executor=fake_executor(calls))
         state = load_state(root / "state" / "watch_state.json")
         files = state["files"]
 
@@ -86,30 +91,28 @@ def test_detects_mp4_and_ignores_non_mp4():
         assert before.st_size == after.st_size
         assert before.st_mtime_ns == after.st_mtime_ns
     finally:
-        watch_folder.run_auto_qc_fix = original
         shutil.rmtree(root, ignore_errors=True)
 
 
 def test_waits_for_stable_file_and_skips_processed_duplicate():
     root = make_root()
     calls = []
-    original = watch_folder.run_auto_qc_fix
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     try:
         source = write(root / "watch" / "wait.mp4")
-        watch_folder.run_auto_qc_fix = fake_runner(calls)
         opts = options(root, stable_seconds=5)
+        executor = fake_executor(calls)
 
-        first = run_watch_cycle(opts, now_func=lambda: base)
+        first = run_watch_cycle(opts, now_func=lambda: base, executor=executor)
         assert first["stable_count"] == 0
         assert len(calls) == 0
 
-        second = run_watch_cycle(opts, now_func=lambda: base + timedelta(seconds=6))
+        second = run_watch_cycle(opts, now_func=lambda: base + timedelta(seconds=6), executor=executor)
         assert second["stable_count"] == 1
         assert second["processed_count"] == 1
         assert len(calls) == 1
 
-        third = run_watch_cycle(opts, now_func=lambda: base + timedelta(seconds=12))
+        third = run_watch_cycle(opts, now_func=lambda: base + timedelta(seconds=12), executor=executor)
         assert third["stable_count"] == 0
         assert third["processed_count"] == 0
         assert len(calls) == 1
@@ -117,21 +120,18 @@ def test_waits_for_stable_file_and_skips_processed_duplicate():
         state = load_state(root / "state" / "watch_state.json")
         assert state["files"][str(source.resolve())]["status"] == "processed"
     finally:
-        watch_folder.run_auto_qc_fix = original
         shutil.rmtree(root, ignore_errors=True)
 
 
 def test_dry_run_does_not_call_auto_qc():
     root = make_root()
-    original = watch_folder.run_auto_qc_fix
     try:
         source = write(root / "watch" / "dry.mp4")
 
-        def should_not_run(*args, **kwargs):
+        def should_not_run(*args):
             raise AssertionError("auto-QC should not run during dry-run")
 
-        watch_folder.run_auto_qc_fix = should_not_run
-        payload = run_watch_cycle(options(root, dry_run=True))
+        payload = run_watch_cycle(options(root, dry_run=True), executor=should_not_run)
         state = load_state(root / "state" / "watch_state.json")
 
         assert payload["skipped_count"] == 1
@@ -139,24 +139,24 @@ def test_dry_run_does_not_call_auto_qc():
         assert state["files"][str(source.resolve())]["status"] == "skipped"
         assert state["files"][str(source.resolve())]["last_result"]["dry_run"] is True
     finally:
-        watch_folder.run_auto_qc_fix = original
         shutil.rmtree(root, ignore_errors=True)
 
 
 def test_once_mode_exits_after_one_cycle():
     root = make_root()
     calls = []
-    original = watch_folder.run_auto_qc_fix
     try:
         write(root / "watch" / "once.mp4")
-        watch_folder.run_auto_qc_fix = fake_runner(calls)
-        cycles = run_watch(options(root, once=True), sleep_func=lambda seconds: (_ for _ in ()).throw(AssertionError("sleep should not run")))
+        cycles = run_watch(
+            options(root, once=True),
+            sleep_func=lambda seconds: (_ for _ in ()).throw(AssertionError("sleep should not run")),
+            executor=fake_executor(calls),
+        )
 
         assert len(cycles) == 1
         assert cycles[0]["processed_count"] == 1
         assert len(calls) == 1
     finally:
-        watch_folder.run_auto_qc_fix = original
         shutil.rmtree(root, ignore_errors=True)
 
 

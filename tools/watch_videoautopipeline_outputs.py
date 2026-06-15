@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT
-from modules.watch_folder import DEFAULT_STATE_FILE, WatchOptions, resolve_watch_folder, run_watch
+from modules.watch_engine import run_watch
+from modules.watch_folder import DEFAULT_STATE_FILE, WatchOptions, resolve_watch_folder
 
 
 def parse_args() -> argparse.Namespace:

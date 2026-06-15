@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Callable
 
 from config import project_path
-from modules.auto_qc import run_auto_qc_fix
 from modules.videoautopipeline_detector import DEFAULT_VIDEOAUTOPIPELINE_ROOT, detect_videoautopipeline_outputs
 
 
@@ -32,6 +31,9 @@ class WatchOptions:
     max_files_per_cycle: int = 10
     allow_original_short: bool = False
     short_clip_min_duration: float = 5.0
+
+
+WatchExecutor = Callable[[Path, WatchOptions, str, int], dict]
 
 
 def utc_now() -> datetime:
@@ -199,12 +201,6 @@ def _stage_files(files: list[Path], state_file: Path, cycle_id: str) -> Path:
     return staging
 
 
-def _output_dir(base_output_dir: str | Path | None, cycle_id: str) -> Path | None:
-    if not base_output_dir:
-        return None
-    return Path(base_output_dir) / cycle_id
-
-
 def _mark_skipped(files: list[Path], state: dict, now_text: str, reason: str) -> list[dict]:
     results = []
     for path in files:
@@ -277,7 +273,19 @@ def _mark_failed(files: list[Path], state: dict, now_text: str, error: str) -> l
     return results
 
 
-def run_watch_cycle(options: WatchOptions, *, now_func: Callable[[], datetime] = utc_now) -> dict:
+def _default_executor() -> WatchExecutor:
+    # ponytail: compatibility shim; new runtime entrypoints live in watch_engine.
+    from modules.watch_engine import run_auto_qc_executor
+
+    return run_auto_qc_executor
+
+
+def run_watch_cycle(
+    options: WatchOptions,
+    *,
+    now_func: Callable[[], datetime] = utc_now,
+    executor: WatchExecutor | None = None,
+) -> dict:
     folder = Path(options.watch_folder)
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"Watch folder not found: {folder}")
@@ -299,16 +307,7 @@ def run_watch_cycle(options: WatchOptions, *, now_func: Callable[[], datetime] =
         save_state(state_path, state)
         staging_dir = _stage_files(ready, state_path, cycle_id)
         try:
-            auto_qc_payload = run_auto_qc_fix(
-                staging_dir,
-                auto_fix=options.auto_fix,
-                copy_results=options.copy_results,
-                output_dir=_output_dir(options.output_dir, cycle_id),
-                limit=len(ready),
-                allow_original_short=options.allow_original_short,
-                short_clip_min_duration=options.short_clip_min_duration,
-                force=True,
-            )
+            auto_qc_payload = (executor or _default_executor())(staging_dir, options, cycle_id, len(ready))
             results = _mark_processed(ready, state, auto_qc_payload, before, now_text)
         except Exception as exc:
             results = _mark_failed(ready, state, now_text, str(exc))
@@ -344,10 +343,11 @@ def run_watch(
     *,
     now_func: Callable[[], datetime] = utc_now,
     sleep_func: Callable[[float], None] = time.sleep,
+    executor: WatchExecutor | None = None,
 ) -> list[dict]:
     cycles = []
     while True:
-        payload = run_watch_cycle(options, now_func=now_func)
+        payload = run_watch_cycle(options, now_func=now_func, executor=executor)
         cycles.append(payload)
         if options.once:
             return cycles
