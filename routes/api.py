@@ -14,6 +14,13 @@ from modules.operator_actions import (
     start_dry_run_job,
     start_production_diagnostics_job,
     start_replace_rollback_job,
+    start_full_videoautopipeline_flow_job,
+    start_process_videoautopipeline_outputs_job,
+    start_vap_delivery_process_job,
+    start_vap_delivery_scan_job,
+    start_vap_delivery_send_job,
+    start_videoautopipeline_batch_job,
+    start_videoautopipeline_worker_job,
     start_watch_job,
     stop_watch_job,
 )
@@ -79,6 +86,12 @@ def _text_from_body(data: dict, key: str) -> str:
     return str(data.get(key) or "").strip()
 
 
+def _bool_from_body(data: dict, key: str, default: bool = False) -> bool:
+    if key not in data:
+        return default
+    return bool(data.get(key))
+
+
 @router.get("/operator/status")
 def api_operator_status():
     return _safe_payload(operator_status, {"ok": False, "jobs": {}, "queue": {}})
@@ -132,6 +145,85 @@ async def api_operator_rollback_replace_log(request: Request):
 async def api_operator_batch_qc_once(request: Request):
     data = await _json_body(request)
     return _safe_payload(lambda: start_batch_qc_job(_folder_from_body(data)), {"ok": False, "error": "Could not start Batch QC."})
+
+
+@router.post("/operator/vap-delivery/scan")
+async def api_operator_vap_delivery_scan(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_vap_delivery_scan_job(_folder_from_body(data)), {"ok": False, "error": "Could not scan VideoAutoPipeline jobs."})
+
+
+@router.post("/operator/vap-delivery/process")
+async def api_operator_vap_delivery_process(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_vap_delivery_process_job(_folder_from_body(data)), {"ok": False, "error": "Could not process VideoAutoPipeline jobs."})
+
+
+@router.post("/operator/vap-delivery/send")
+async def api_operator_vap_delivery_send(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_vap_delivery_send_job(_folder_from_body(data)), {"ok": False, "error": "Could not process/send VideoAutoPipeline jobs."})
+
+
+@router.post("/operator/videoautopipeline-worker")
+async def api_operator_videoautopipeline_worker(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_videoautopipeline_worker_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "input_video"),
+            _text_from_body(data, "output_root"),
+        ),
+        {"ok": False, "error": "Could not start VideoAutoPipeline worker."},
+    )
+
+
+@router.post("/operator/videoautopipeline-batch")
+async def api_operator_videoautopipeline_batch(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_videoautopipeline_batch_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "input_folder"),
+            _text_from_body(data, "output_root"),
+            data.get("limit"),
+        ),
+        {"ok": False, "error": "Could not start VideoAutoPipeline batch."},
+    )
+
+
+@router.post("/operator/process-videoautopipeline-outputs")
+async def api_operator_process_videoautopipeline_outputs(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_process_videoautopipeline_outputs_job(
+            _text_from_body(data, "output_root"),
+            dry_run=_bool_from_body(data, "dry_run", True),
+            auto_fix=_bool_from_body(data, "auto_fix", True),
+            copy_results=_bool_from_body(data, "copy_results", True),
+            send_telegram=_bool_from_body(data, "send_telegram", False),
+        ),
+        {"ok": False, "error": "Could not process VideoAutoPipeline outputs."},
+    )
+
+
+@router.post("/operator/full-videoautopipeline-flow")
+async def api_operator_full_videoautopipeline_flow(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_full_videoautopipeline_flow_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "output_root"),
+            input_video=_text_from_body(data, "input_video"),
+            input_folder=_text_from_body(data, "input_folder"),
+            limit=data.get("limit"),
+            dry_run=_bool_from_body(data, "dry_run", True),
+            auto_fix=_bool_from_body(data, "auto_fix", True),
+            copy_results=_bool_from_body(data, "copy_results", True),
+            send_telegram=_bool_from_body(data, "send_telegram", False),
+        ),
+        {"ok": False, "error": "Could not run full VideoAutoPipeline to Plato flow."},
+    )
 
 
 @router.post("/operator/watch/start")

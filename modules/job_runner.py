@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import project_path
+from config import VIDEOAUTOPIPELINE_OUTPUT_ROOT, VIDEOAUTOPIPELINE_ROOT, project_path
 
 
 JOB_STATUSES = {"queued", "running", "completed", "failed", "cancelled"}
@@ -94,6 +94,48 @@ ACTION_DEFINITIONS = {
         "requires_folder": True,
         "cancellable": False,
     },
+    "vap_delivery_scan": {
+        "display": r"py tools\process_videoautopipeline_outputs.py SELECTED_FOLDER --dry-run",
+        "args": ["tools/process_videoautopipeline_outputs.py", "{folder}", "--dry-run"],
+        "requires_folder": True,
+        "cancellable": False,
+    },
+    "vap_delivery_process": {
+        "display": r"py tools\process_videoautopipeline_outputs.py SELECTED_FOLDER --auto-fix --copy-results",
+        "args": ["tools/process_videoautopipeline_outputs.py", "{folder}", "--auto-fix", "--copy-results"],
+        "requires_folder": True,
+        "cancellable": False,
+    },
+    "vap_delivery_send": {
+        "display": r"py tools\process_videoautopipeline_outputs.py SELECTED_FOLDER --auto-fix --copy-results --send-telegram",
+        "args": ["tools/process_videoautopipeline_outputs.py", "{folder}", "--auto-fix", "--copy-results", "--send-telegram"],
+        "requires_folder": True,
+        "cancellable": False,
+    },
+    "run_videoautopipeline_worker": {
+        "display": "py VIDEOAUTOPIPELINE_APP --worker INPUT.mp4",
+        "args": [],
+        "requires_input_file": True,
+        "cancellable": False,
+    },
+    "run_videoautopipeline_batch": {
+        "display": "py VIDEOAUTOPIPELINE_APP --batch INPUT_FOLDER",
+        "args": [],
+        "requires_input_folder": True,
+        "cancellable": False,
+    },
+    "process_videoautopipeline_outputs": {
+        "display": r"py tools\process_videoautopipeline_outputs.py OUTPUT_ROOT --auto-fix --copy-results --dry-run",
+        "args": [],
+        "requires_output_root": True,
+        "cancellable": False,
+    },
+    "run_full_videoautopipeline_to_plato_flow": {
+        "display": r"py tools\run_videoautopipeline_full_flow.py --vap-root VIDEOAUTOPIPELINE_ROOT --output-root OUTPUT_ROOT",
+        "args": [],
+        "requires_output_root": True,
+        "cancellable": False,
+    },
 }
 
 _PROCESSES: dict[str, subprocess.Popen] = {}
@@ -161,16 +203,105 @@ def _replace_args(args: list[str], values: dict[str, str | None]) -> list[str]:
     return output
 
 
+def _vap_paths(
+    vap_root: str | Path | None = None,
+    output_root: str | Path | None = None,
+) -> tuple[Path, Path, Path]:
+    root = Path(vap_root or VIDEOAUTOPIPELINE_ROOT)
+    output = Path(output_root or VIDEOAUTOPIPELINE_OUTPUT_ROOT)
+    return root, root / "app.py", output
+
+
+def _add_process_flags(
+    args: list[str],
+    *,
+    dry_run: bool = True,
+    auto_fix: bool = True,
+    copy_results: bool = True,
+    send_telegram: bool = False,
+) -> None:
+    if auto_fix:
+        args.append("--auto-fix")
+    if copy_results:
+        args.append("--copy-results")
+    if dry_run:
+        args.append("--dry-run")
+    if send_telegram:
+        args.append("--send-telegram")
+
+
+def _vap_env(
+    *,
+    vap_root: str | Path | None = None,
+    output_root: str | Path | None = None,
+) -> dict[str, str]:
+    root, _, output = _vap_paths(vap_root, output_root)
+    return {
+        "SEND_MODE": "after_plato",
+        "VAP_SEND_MODE": "after_plato",
+        "VAP_OUTPUT_DIR": str(output),
+        "VIDEOAUTOPIPELINE_ROOT": str(root),
+        "VIDEOAUTOPIPELINE_OUTPUT_ROOT": str(output),
+    }
+
+
 def _command_for_action(
     action: str,
     folder: str | None = None,
     *,
     backup_dir: str | None = None,
     log_path: str | None = None,
+    input_file: str | None = None,
+    input_folder: str | None = None,
+    output_root: str | None = None,
+    limit: int | None = None,
+    dry_run: bool = True,
+    auto_fix: bool = True,
+    copy_results: bool = True,
+    send_telegram: bool = False,
+    vap_root: str | None = None,
 ) -> tuple[list[str], str]:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
         raise ValueError(f"Unsupported operator action: {action}")
+    root, app_path, output = _vap_paths(vap_root, output_root)
+    if action == "run_videoautopipeline_worker":
+        if not input_file:
+            raise ValueError("An input MP4 is required for this action.")
+        args = [sys.executable, str(app_path), "--worker", input_file]
+        return args, f'py {app_path} --worker "{input_file}"'
+    if action == "run_videoautopipeline_batch":
+        if not input_folder:
+            raise ValueError("An input folder is required for this action.")
+        args = [sys.executable, str(app_path), "--batch", input_folder]
+        display = f'py {app_path} --batch "{input_folder}"'
+        if limit:
+            args.extend(["--limit", str(limit)])
+            display += f" --limit {limit}"
+        return args, display
+    if action == "process_videoautopipeline_outputs":
+        args = [sys.executable, "tools/process_videoautopipeline_outputs.py", str(output)]
+        _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=send_telegram)
+        return args, "py " + " ".join(args[1:])
+    if action == "run_full_videoautopipeline_to_plato_flow":
+        if not input_file and not input_folder:
+            raise ValueError("An input MP4 or input folder is required for this action.")
+        args = [
+            sys.executable,
+            "tools/run_videoautopipeline_full_flow.py",
+            "--vap-root",
+            str(root),
+            "--output-root",
+            str(output),
+        ]
+        if input_file:
+            args.extend(["--input-video", input_file])
+        if input_folder:
+            args.extend(["--input-folder", input_folder])
+        if limit:
+            args.extend(["--limit", str(limit)])
+        _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=send_telegram)
+        return args, "py " + " ".join(args[1:])
     if definition.get("requires_folder") and not folder:
         raise ValueError("A folder path is required for this action.")
     if definition.get("requires_backup_dir") and not backup_dir:
@@ -317,12 +448,38 @@ def start_job(
     folder: str | None = None,
     backup_dir: str | None = None,
     log_path: str | None = None,
+    input_file: str | None = None,
+    input_folder: str | None = None,
+    output_root: str | None = None,
+    limit: int | None = None,
+    dry_run: bool = True,
+    auto_fix: bool = True,
+    copy_results: bool = True,
+    send_telegram: bool = False,
+    vap_root: str | None = None,
     job_file: str | Path = DEFAULT_JOB_FILE,
 ) -> dict:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
         raise ValueError(f"Unsupported operator action: {action}")
-    args, display = _command_for_action(action, folder, backup_dir=backup_dir, log_path=log_path)
+    args, display = _command_for_action(
+        action,
+        folder,
+        backup_dir=backup_dir,
+        log_path=log_path,
+        input_file=input_file,
+        input_folder=input_folder,
+        output_root=output_root,
+        limit=limit,
+        dry_run=dry_run,
+        auto_fix=auto_fix,
+        copy_results=copy_results,
+        send_telegram=send_telegram,
+        vap_root=vap_root,
+    )
+    env = os.environ.copy()
+    if action.startswith("run_videoautopipeline") or action == "process_videoautopipeline_outputs":
+        env.update(_vap_env(vap_root=vap_root, output_root=output_root))
     with _LOCK:
         state = load_jobs(job_file)
         if definition.get("singleton") and _running_watch_job(state):
@@ -355,6 +512,7 @@ def start_job(
         encoding="utf-8",
         errors="replace",
         shell=False,
+        env=env,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     with _LOCK:

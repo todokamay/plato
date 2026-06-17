@@ -69,7 +69,42 @@
   </article>
 
   <article class="panel operator-step">
-    <div class="section-title"><h2>8. Production Diagnostics</h2></div>
+    <div class="section-title"><h2>8. VideoAutoPipeline &rarr; Plato Flow</h2></div>
+    <p class="muted">VideoAutoPipeline runs first. Telegram happens only after Plato approval. Dry-run is default. No Telegram send unless explicitly checked and env vars exist.</p>
+    <label for="vap-root-input">VideoAutoPipeline root</label>
+    <input id="vap-root-input" type="text" value="{{ operator.videoautopipeline.root }}" placeholder="C:\Users\User\Desktop\Work\VideoAutoPipeline">
+    <label for="vap-output-root-input">Output root</label>
+    <input id="vap-output-root-input" type="text" value="{{ operator.videoautopipeline.output_root }}" placeholder="C:\Users\User\Desktop\Work\VideoAutoPipeline\data\output">
+    <label for="vap-input-video">Input video path</label>
+    <input id="vap-input-video" type="text" placeholder="C:\path\video.mp4">
+    <label for="vap-input-folder">Input folder path</label>
+    <input id="vap-input-folder" type="text" placeholder="C:\path\folder">
+    <label for="vap-limit-input">Limit</label>
+    <input id="vap-limit-input" type="number" min="1" step="1" placeholder="3">
+    <label class="check-row"><input id="vap-dry-run" type="checkbox" checked> Dry-run Plato processing</label>
+    <label class="check-row"><input id="vap-auto-fix" type="checkbox" checked> Auto-fix</label>
+    <label class="check-row"><input id="vap-copy-results" type="checkbox" checked> Copy results</label>
+    <label class="check-row"><input id="vap-send-telegram" type="checkbox"> Send Telegram after Plato approval</label>
+    <div class="action-row">
+      <button id="vap-worker-run" type="button">Run VideoAutoPipeline Worker</button>
+      <button id="vap-batch-run" type="button">Run VideoAutoPipeline Batch</button>
+      <button id="vap-process-outputs" type="button">Process VideoAutoPipeline Outputs With Plato</button>
+      <button id="vap-full-flow" type="button">Run Full Flow</button>
+    </div>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>9. VideoAutoPipeline Delivery Gate</h2></div>
+    <p class="muted">Telegram only sends Plato-approved outputs. Missing Telegram env means send is skipped.</p>
+    <div class="action-row">
+      <button id="vap-delivery-scan" type="button">Scan Waiting Jobs</button>
+      <button id="vap-delivery-process" type="button">Process Waiting Jobs</button>
+      <button id="vap-delivery-send" type="button">Process + Send Telegram</button>
+    </div>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>10. Production Diagnostics</h2></div>
     <p class="muted">Export a sanitized diagnostics bundle for debugging. No video files or SQLite databases are included.</p>
     <pre class="command-block">py tools\export_production_diagnostics.py</pre>
     <button id="export-production-diagnostics" type="button">Export Production Diagnostics</button>
@@ -84,6 +119,11 @@
       <dt>Queue size</dt><dd id="queue-size">-</dd>
       <dt>Safe replace</dt><dd id="replace-status">{{ operator.replace.status }}</dd>
       <dt>Latest replace log</dt><dd id="replace-log" class="path-text">{{ operator.replace.latest_log or "-" }}</dd>
+      <dt>VAP output root</dt><dd id="vap-status-output-root" class="path-text">{{ operator.videoautopipeline.output_root }}</dd>
+      <dt>VAP latest job</dt><dd id="vap-status-latest-job">-</dd>
+      <dt>Plato processing job</dt><dd id="vap-status-plato-job">-</dd>
+      <dt>Waiting for Plato</dt><dd id="vap-status-waiting">{{ operator.videoautopipeline.waiting_for_plato_count }}</dd>
+      <dt>Last delivery summary</dt><dd id="vap-status-summary" class="path-text">{{ operator.videoautopipeline.last_delivery_summary_path or "-" }}</dd>
       <dt>Current job</dt><dd id="current-job">-</dd>
       <dt>Last job</dt><dd id="last-job">-</dd>
     </dl>
@@ -140,6 +180,20 @@ const backupDirInput = document.getElementById("backup-dir-input");
 const rollbackLogInput = document.getElementById("rollback-log-input");
 const replaceStatus = document.getElementById("replace-status");
 const replaceLog = document.getElementById("replace-log");
+const vapRootInput = document.getElementById("vap-root-input");
+const vapOutputRootInput = document.getElementById("vap-output-root-input");
+const vapInputVideo = document.getElementById("vap-input-video");
+const vapInputFolder = document.getElementById("vap-input-folder");
+const vapLimitInput = document.getElementById("vap-limit-input");
+const vapDryRun = document.getElementById("vap-dry-run");
+const vapAutoFix = document.getElementById("vap-auto-fix");
+const vapCopyResults = document.getElementById("vap-copy-results");
+const vapSendTelegram = document.getElementById("vap-send-telegram");
+const vapStatusOutputRoot = document.getElementById("vap-status-output-root");
+const vapStatusLatestJob = document.getElementById("vap-status-latest-job");
+const vapStatusPlatoJob = document.getElementById("vap-status-plato-job");
+const vapStatusWaiting = document.getElementById("vap-status-waiting");
+const vapStatusSummary = document.getElementById("vap-status-summary");
 const buttons = {
   detect: document.getElementById("detect-outputs"),
   dryRun: document.getElementById("dry-run"),
@@ -148,6 +202,13 @@ const buttons = {
   rollbackReplace: document.getElementById("rollback-replace"),
   exportDiagnostics: document.getElementById("export-production-diagnostics"),
   batchQc: document.getElementById("batch-qc-once"),
+  vapDeliveryScan: document.getElementById("vap-delivery-scan"),
+  vapDeliveryProcess: document.getElementById("vap-delivery-process"),
+  vapDeliverySend: document.getElementById("vap-delivery-send"),
+  vapWorkerRun: document.getElementById("vap-worker-run"),
+  vapBatchRun: document.getElementById("vap-batch-run"),
+  vapProcessOutputs: document.getElementById("vap-process-outputs"),
+  vapFullFlow: document.getElementById("vap-full-flow"),
   watchStart: document.getElementById("watch-start"),
   watchStop: document.getElementById("watch-stop"),
   refresh: document.getElementById("refresh-status"),
@@ -181,12 +242,33 @@ function replacePayload() {
   };
 }
 
+function vapPayload() {
+  return {
+    vap_root: vapRootInput.value.trim(),
+    output_root: vapOutputRootInput.value.trim(),
+    input_video: vapInputVideo.value.trim(),
+    input_folder: vapInputFolder.value.trim(),
+    limit: vapLimitInput.value.trim(),
+    dry_run: vapDryRun.checked,
+    auto_fix: vapAutoFix.checked,
+    copy_results: vapCopyResults.checked,
+    send_telegram: vapSendTelegram.checked,
+  };
+}
+
 function setBusy(running) {
   buttons.autoQc.disabled = running;
   buttons.autoQcReplace.disabled = running;
   buttons.rollbackReplace.disabled = running;
   buttons.exportDiagnostics.disabled = running;
   buttons.batchQc.disabled = running;
+  buttons.vapDeliveryScan.disabled = running;
+  buttons.vapDeliveryProcess.disabled = running;
+  buttons.vapDeliverySend.disabled = running;
+  buttons.vapWorkerRun.disabled = running;
+  buttons.vapBatchRun.disabled = running;
+  buttons.vapProcessOutputs.disabled = running;
+  buttons.vapFullFlow.disabled = running;
   buttons.watchStart.disabled = running;
   buttons.dryRun.disabled = running;
 }
@@ -211,10 +293,18 @@ async function refreshStatus() {
   const last = state.last_job || null;
   const queue = status.queue || {};
   const replace = status.replace || {};
+  const vap = status.videoautopipeline || {};
   watchStatus.textContent = watch.running ? "running" : "stopped";
   queueSize.textContent = queue.total ?? 0;
   replaceStatus.textContent = replace.status || "never_used";
   replaceLog.textContent = replace.latest_log || "-";
+  vapStatusOutputRoot.textContent = vap.output_root || "-";
+  const vapJob = vap.latest_videoautopipeline_job || null;
+  const platoJob = vap.latest_plato_processing_job || null;
+  vapStatusLatestJob.textContent = vapJob ? `${vapJob.job_type} (${vapJob.status})` : "-";
+  vapStatusPlatoJob.textContent = platoJob ? `${platoJob.job_type} (${platoJob.status})` : "-";
+  vapStatusWaiting.textContent = vap.waiting_for_plato_count ?? 0;
+  vapStatusSummary.textContent = vap.last_delivery_summary_path || "-";
   if (replace.latest_log && !rollbackLogInput.value.trim()) {
     rollbackLogInput.value = replace.latest_log;
   }
@@ -279,6 +369,34 @@ buttons.exportDiagnostics.addEventListener("click", async () => {
 });
 buttons.batchQc.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/batch-qc-once", folderPayload()));
+  refreshStatus();
+});
+buttons.vapDeliveryScan.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-delivery/scan", folderPayload()));
+  refreshStatus();
+});
+buttons.vapDeliveryProcess.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-delivery/process", folderPayload()));
+  refreshStatus();
+});
+buttons.vapDeliverySend.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-delivery/send", folderPayload()));
+  refreshStatus();
+});
+buttons.vapWorkerRun.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/videoautopipeline-worker", vapPayload()));
+  refreshStatus();
+});
+buttons.vapBatchRun.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/videoautopipeline-batch", vapPayload()));
+  refreshStatus();
+});
+buttons.vapProcessOutputs.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/process-videoautopipeline-outputs", vapPayload()));
+  refreshStatus();
+});
+buttons.vapFullFlow.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/full-videoautopipeline-flow", vapPayload()));
   refreshStatus();
 });
 buttons.watchStart.addEventListener("click", async () => {

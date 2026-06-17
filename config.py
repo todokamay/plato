@@ -1,9 +1,14 @@
+import os
 from pathlib import Path
 
 APP_NAME = "Plato Video Lab"
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
+VIDEOAUTOPIPELINE_ROOT = Path(os.environ.get("VIDEOAUTOPIPELINE_ROOT") or r"C:\Users\User\Desktop\Work\VideoAutoPipeline")
+VIDEOAUTOPIPELINE_OUTPUT_ROOT = Path(
+    os.environ.get("VIDEOAUTOPIPELINE_OUTPUT_ROOT") or VIDEOAUTOPIPELINE_ROOT / "data" / "output"
+)
 
 UPLOAD_DIR = "data/uploads"
 FRAMES_DIR = "data/frames"
