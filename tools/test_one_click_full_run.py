@@ -83,14 +83,18 @@ def main() -> int:
         assert payload["job"]["job_type"] == "run_full_videoautopipeline_to_plato_flow"
 
         captured = []
+        captured_env = []
         original_run_command = run_videoautopipeline_full_flow.run_command
+        original_ollama_available = run_videoautopipeline_full_flow.ollama_available
 
         def fake_run_command(cmd, cwd, env, step_name, steps):
             captured.append(cmd)
+            captured_env.append(dict(env))
             steps[step_name]["status"] = "succeeded"
             return 0
 
         run_videoautopipeline_full_flow.run_command = fake_run_command
+        run_videoautopipeline_full_flow.ollama_available = lambda: False
         try:
             code = run_videoautopipeline_full_flow.main([
                 "--vap-root",
@@ -104,8 +108,11 @@ def main() -> int:
             ])
         finally:
             run_videoautopipeline_full_flow.run_command = original_run_command
+            run_videoautopipeline_full_flow.ollama_available = original_ollama_available
         assert code == 0
         assert captured[0][-1] == "--resume"
+        assert captured_env[0]["VAP_ENABLE_LLM"] == "0"
+        assert captured_env[0]["VAP_ENABLE_VISION"] == "0"
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

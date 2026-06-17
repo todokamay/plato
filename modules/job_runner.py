@@ -386,7 +386,37 @@ def _is_pid_running(pid: int | str | None) -> bool:
 
 
 def _monitor_job(job_id: str, process: subprocess.Popen, job_file: str | Path) -> None:
-    stdout, stderr = process.communicate()
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+
+    def reader(stream, key: str, parts: list[str]) -> None:
+        if stream is None:
+            return
+        count = 0
+        for line in iter(stream.readline, ""):
+            count += 1
+            parts.append(line)
+            if len(parts) > 200:
+                parts[:] = [_tail("".join(parts))]
+            if count != 1 and count % 25 != 0:
+                continue
+            with _LOCK:
+                state = load_jobs(job_file)
+                job = _find_job(state, job_id)
+                if not job:
+                    return
+                job[key] = _tail("".join(parts))
+                save_jobs(state, job_file)
+
+    stdout_thread = threading.Thread(target=reader, args=(process.stdout, "stdout_tail", stdout_parts), daemon=True)
+    stderr_thread = threading.Thread(target=reader, args=(process.stderr, "stderr_tail", stderr_parts), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    process.wait()
+    stdout_thread.join(timeout=1)
+    stderr_thread.join(timeout=1)
+    stdout = "".join(stdout_parts)
+    stderr = "".join(stderr_parts)
     with _LOCK:
         state = load_jobs(job_file)
         job = _find_job(state, job_id)

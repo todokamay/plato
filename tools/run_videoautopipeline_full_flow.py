@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def ollama_available() -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", 11434), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def steps_payload() -> dict:
     return {
         "video_generation": {"status": "pending", "reason": ""},
@@ -41,34 +50,33 @@ def finish(code: int, steps: dict, failed_step: str = "") -> int:
         "failed_step": failed_step,
         "steps": steps,
     }
-    print(SUMMARY_PREFIX + json.dumps(payload, separators=(",", ":"), ensure_ascii=True))
+    print()
+    print(SUMMARY_PREFIX + json.dumps(payload, separators=(",", ":"), ensure_ascii=True), flush=True)
     return code
 
 
 def run_command(cmd: list[str], cwd: Path, env: dict, step_name: str, steps: dict) -> int:
     steps[step_name]["status"] = "running"
-    completed = subprocess.run(
+    print(f"FULL_PIPELINE_STEP {step_name} started", flush=True)
+    process = subprocess.Popen(
         cmd,
         cwd=cwd,
         env=env,
         shell=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
     )
-    if completed.stdout:
-        print(completed.stdout, end="")
-    if completed.stderr:
-        print(completed.stderr, end="", file=sys.stderr)
-    if completed.returncode:
+    while True:
+        try:
+            code = process.wait(timeout=30)
+            break
+        except subprocess.TimeoutExpired:
+            print(f"FULL_PIPELINE_STEP {step_name} still running", flush=True)
+    if code:
         steps[step_name]["status"] = "failed"
-        lines = (completed.stderr or completed.stdout or "").splitlines()
-        detail = next((line.strip() for line in reversed(lines) if line.strip()), "")
-        steps[step_name]["reason"] = f"exit code {completed.returncode}" + (f": {detail}" if detail else "")
+        steps[step_name]["reason"] = f"exit code {code}"
     else:
         steps[step_name]["status"] = "succeeded"
-    return completed.returncode
+    print(f"FULL_PIPELINE_STEP {step_name} {steps[step_name]['status']}", flush=True)
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,14 +93,19 @@ def main(argv: list[str] | None = None) -> int:
 
     env = os.environ.copy()
     env.update({
+        "PYTHONUNBUFFERED": "1",
         "SEND_MODE": "after_plato",
         "VAP_SEND_MODE": "after_plato",
         "VAP_OUTPUT_DIR": str(Path(args.output_root)),
         "VIDEOAUTOPIPELINE_ROOT": str(vap_root),
         "VIDEOAUTOPIPELINE_OUTPUT_ROOT": str(Path(args.output_root)),
     })
+    if not ollama_available():
+        env.setdefault("VAP_ENABLE_LLM", "0")
+        env.setdefault("VAP_ENABLE_VISION", "0")
+        print("FULL_PIPELINE_STEP video_generation Ollama unavailable; VAP LLM/vision disabled", flush=True)
 
-    vap_cmd = [sys.executable, str(vap_app), "--worker", args.input_video] if args.input_video else [sys.executable, str(vap_app), "--batch", args.input_folder]
+    vap_cmd = [sys.executable, "-u", str(vap_app), "--worker", args.input_video] if args.input_video else [sys.executable, "-u", str(vap_app), "--batch", args.input_folder]
     if args.input_folder and args.limit:
         vap_cmd.extend(["--limit", str(args.limit)])
     vap_cmd.append("--resume")
@@ -100,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     if code:
         return finish(code, steps, "video_generation")
 
-    plato_cmd = [sys.executable, str(ROOT / "tools" / "process_videoautopipeline_outputs.py"), str(Path(args.output_root))]
+    plato_cmd = [sys.executable, "-u", str(ROOT / "tools" / "process_videoautopipeline_outputs.py"), str(Path(args.output_root))]
     if args.auto_fix:
         plato_cmd.append("--auto-fix")
     if args.copy_results:
