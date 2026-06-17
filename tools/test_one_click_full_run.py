@@ -82,6 +82,31 @@ def main() -> int:
         assert payload["ok"] is True
         assert payload["job"]["job_type"] == "run_full_videoautopipeline_to_plato_flow"
 
+        captured = []
+        original_run_command = run_videoautopipeline_full_flow.run_command
+
+        def fake_run_command(cmd, cwd, env, step_name, steps):
+            captured.append(cmd)
+            steps[step_name]["status"] = "succeeded"
+            return 0
+
+        run_videoautopipeline_full_flow.run_command = fake_run_command
+        try:
+            code = run_videoautopipeline_full_flow.main([
+                "--vap-root",
+                str(vap_root),
+                "--output-root",
+                str(output_root),
+                "--input-folder",
+                str(input_folder),
+                "--limit",
+                "3",
+            ])
+        finally:
+            run_videoautopipeline_full_flow.run_command = original_run_command
+        assert code == 0
+        assert captured[0][-1] == "--resume"
+
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = run_videoautopipeline_full_flow.main([

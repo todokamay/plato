@@ -63,7 +63,9 @@ def run_command(cmd: list[str], cwd: Path, env: dict, step_name: str, steps: dic
         print(completed.stderr, end="", file=sys.stderr)
     if completed.returncode:
         steps[step_name]["status"] = "failed"
-        steps[step_name]["reason"] = f"exit code {completed.returncode}"
+        lines = (completed.stderr or completed.stdout or "").splitlines()
+        detail = next((line.strip() for line in reversed(lines) if line.strip()), "")
+        steps[step_name]["reason"] = f"exit code {completed.returncode}" + (f": {detail}" if detail else "")
     else:
         steps[step_name]["status"] = "succeeded"
     return completed.returncode
@@ -93,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     vap_cmd = [sys.executable, str(vap_app), "--worker", args.input_video] if args.input_video else [sys.executable, str(vap_app), "--batch", args.input_folder]
     if args.input_folder and args.limit:
         vap_cmd.extend(["--limit", str(args.limit)])
+    vap_cmd.append("--resume")
     code = run_command(vap_cmd, vap_root, env, "video_generation", steps)
     if code:
         return finish(code, steps, "video_generation")
