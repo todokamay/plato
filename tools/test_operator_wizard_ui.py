@@ -15,6 +15,10 @@ def main() -> int:
     assert response.status_code == 200
     text = response.text
     assert "Operator Run Wizard" in text
+    assert "Generate Videos" in text
+    assert "Check &amp; Fix With Plato" in text
+    assert "Send Approved To Telegram" in text
+    assert "<summary>Advanced</summary>" in text
     assert "Detect VideoAutoPipeline Outputs" in text
     assert "Run Dry Run" in text
     assert "Run Auto QC Once" in text
