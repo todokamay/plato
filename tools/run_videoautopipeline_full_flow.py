@@ -93,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
 
     env = os.environ.copy()
     env.update({
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
         "PYTHONUNBUFFERED": "1",
         "SEND_MODE": "after_plato",
         "VAP_SEND_MODE": "after_plato",

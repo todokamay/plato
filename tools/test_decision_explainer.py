@@ -64,6 +64,7 @@ def main() -> int:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
         assert completed.returncode == 0, completed.stderr
         payload = json.loads(completed.stdout)

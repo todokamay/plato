@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -169,9 +170,23 @@ def save_jobs(state: dict, job_file: str | Path = DEFAULT_JOB_FILE) -> None:
     path = Path(job_file)
     path.parent.mkdir(parents=True, exist_ok=True)
     state["updated_at"] = utc_now()
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     temp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    temp_path.replace(path)
+    try:
+        for attempt in range(5):
+            try:
+                temp_path.replace(path)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
 
 
 def _tail(text: str) -> str:
@@ -338,6 +353,10 @@ def _summarize(stdout: str, stderr: str, exit_code: int) -> dict:
     return summary
 
 
+def _decode_output(chunk: bytes | str) -> str:
+    return chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+
+
 def is_pid_running(pid: int | str | None) -> bool:
     """Return True when pid appears to reference a live process. Never raises."""
     if not pid:
@@ -393,7 +412,11 @@ def _monitor_job(job_id: str, process: subprocess.Popen, job_file: str | Path) -
         if stream is None:
             return
         count = 0
-        for line in iter(stream.readline, ""):
+        while True:
+            chunk = stream.readline()
+            if not chunk:
+                break
+            line = _decode_output(chunk)
             count += 1
             parts.append(line)
             if len(parts) > 200:
@@ -508,6 +531,9 @@ def start_job(
         vap_root=vap_root,
     )
     env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUNBUFFERED", "1")
     if action.startswith("run_videoautopipeline") or action == "process_videoautopipeline_outputs":
         env.update(_vap_env(vap_root=vap_root, output_root=output_root))
     with _LOCK:
@@ -538,9 +564,6 @@ def start_job(
         cwd=project_path("."),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         shell=False,
         env=env,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
