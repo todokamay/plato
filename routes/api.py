@@ -226,6 +226,11 @@ async def api_operator_full_videoautopipeline_flow(request: Request):
     )
 
 
+@router.post("/operator/full-pipeline-run")
+async def api_operator_full_pipeline_run(request: Request):
+    return await api_operator_full_videoautopipeline_flow(request)
+
+
 @router.post("/operator/watch/start")
 async def api_operator_watch_start(request: Request):
     data = await _json_body(request)
