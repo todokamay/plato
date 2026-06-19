@@ -11,25 +11,123 @@
   </div>
 </section>
 
-<section class="panel">
-  <div class="section-title"><h2>VideoAutoPipeline</h2></div>
-  <p class="muted">Generate videos, check them with Plato, auto-fix where allowed, then optionally send approved clips to Telegram.</p>
-  <label for="simple-vap-input">Input video or folder</label>
-  <input id="simple-vap-input" type="text" placeholder="C:\path\video.mp4 or C:\path\folder">
-  <label for="simple-vap-limit">Limit</label>
-  <input id="simple-vap-limit" type="number" min="1" step="1" placeholder="3">
-  <label class="check-row"><input id="simple-vap-dry-run" type="checkbox" checked> Dry-run</label>
-  <label class="check-row"><input id="simple-vap-send-telegram" type="checkbox"> Send Telegram after Plato approval</label>
-  <div class="action-row">
-    <button id="full-pipeline-run" class="primary" type="button">Run Full Pipeline</button>
+<section class="panel operator-run-settings">
+  <div class="section-title"><h2>Run Settings</h2></div>
+  <div class="operator-settings-grid">
+    <div>
+      <label for="vap-input-video">Input video path</label>
+      <input id="vap-input-video" type="text" placeholder="C:\path\video.mp4">
+    </div>
+    <div>
+      <label for="vap-input-folder">Input folder path</label>
+      <input id="vap-input-folder" type="text" placeholder="C:\path\folder">
+    </div>
+    <div>
+      <label for="vap-limit-input">Limit</label>
+      <input id="vap-limit-input" type="number" min="1" step="1" placeholder="3">
+    </div>
   </div>
-  <dl class="meta">
-    <dt>Step 1: Video generation</dt><dd id="full-step-video">idle</dd>
-    <dt>Step 2: Plato QC</dt><dd id="full-step-qc">idle</dd>
-    <dt>Step 3: Auto-fix</dt><dd id="full-step-fix">idle</dd>
-    <dt>Step 4: Delivery</dt><dd id="full-step-delivery">idle</dd>
-    <dt>Overall status</dt><dd id="full-step-overall">idle</dd>
-  </dl>
+  <div class="action-row">
+    <label class="check-row"><input id="vap-dry-run" type="checkbox" checked> Dry-run</label>
+    <label class="check-row"><input id="vap-send-telegram" type="checkbox"> Send Telegram after Plato approval</label>
+  </div>
+  <div id="folder-warning" class="muted operator-result"></div>
+</section>
+
+<section class="panel" id="control-room">
+  <div class="section-title"><h2>Control Room</h2><a href="/api/operator/control-room-status">JSON</a></div>
+  <div class="control-status-bar">
+    <div class="status-tile"><span>VideoAutoPipeline</span><strong id="cr-vap-status">idle</strong></div>
+    <div class="status-tile"><span>Plato</span><strong id="cr-plato-status">idle</strong></div>
+    <div class="status-tile"><span>Telegram</span><strong id="cr-telegram-status">disabled</strong></div>
+    <div class="status-tile"><span>Current job</span><strong id="cr-current-job-status">none</strong></div>
+  </div>
+</section>
+
+<section class="split control-room-grid">
+  <article class="panel">
+    <div class="section-title"><h2>Current Run</h2></div>
+    <p id="cr-empty-state" class="muted">No active run.</p>
+    <dl class="meta">
+      <dt>Input</dt><dd id="cr-input-path" class="path-text">-</dd>
+      <dt>Stage</dt><dd id="cr-stage">-</dd>
+      <dt>Elapsed</dt><dd id="cr-elapsed">-</dd>
+      <dt>Heartbeat</dt><dd id="cr-heartbeat">-</dd>
+      <dt>Failed step</dt><dd id="cr-failed-step">-</dd>
+      <dt>Reason</dt><dd id="cr-reason" class="path-text">-</dd>
+    </dl>
+    <div class="action-row retry-row">
+      <button id="retry-full-pipeline" type="button">Retry Full Pipeline</button>
+      <button id="retry-plato-only" type="button">Retry Plato Only</button>
+      <button id="retry-delivery-only" type="button">Retry Delivery Only</button>
+    </div>
+    <dl class="meta">
+      <dt>stdout tail</dt><dd><pre id="cr-stdout-tail" class="operator-tail operator-tail-small">-</pre></dd>
+      <dt>stderr tail</dt><dd><pre id="cr-stderr-tail" class="operator-tail operator-tail-small">-</pre></dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="section-title"><h2>Final Output</h2></div>
+    <p id="cr-final-message" class="muted">No approved output yet.</p>
+    <dl class="meta">
+      <dt>Approved output</dt><dd id="cr-approved-output" class="path-text">-</dd>
+      <dt>Source final</dt><dd id="cr-source-final" class="path-text">-</dd>
+      <dt>Score</dt><dd id="cr-plato-score">-</dd>
+      <dt>Verdict</dt><dd id="cr-plato-verdict">-</dd>
+      <dt>Bucket</dt><dd id="cr-plato-bucket">-</dd>
+      <dt>Delivery</dt><dd id="cr-delivery-status">-</dd>
+      <dt>Telegram</dt><dd id="cr-final-telegram">-</dd>
+      <dt>Reason</dt><dd id="cr-final-reason" class="path-text">-</dd>
+    </dl>
+    <div class="action-row">
+      <button id="open-final-folder" type="button">Open final folder</button>
+      <button id="copy-final-path" type="button">Copy final path</button>
+      <button id="open-delivery-summary" type="button">Open delivery summary</button>
+    </div>
+  </article>
+</section>
+
+<section class="operator-grid operator-main-grid">
+  <article class="panel operator-step">
+    <div class="section-title"><h2>Video Generation</h2></div>
+    <div class="action-row">
+      <button id="full-pipeline-run" class="primary" type="button">Run Full Pipeline</button>
+      <button id="vap-generate-longvideos" type="button">Generate From LongVideos</button>
+      <button id="vap-generate-one-video" type="button">Generate One Video</button>
+      <button id="vap-batch-generate-folder" type="button">Batch Generate Folder</button>
+    </div>
+    <dl class="meta">
+      <dt>Step 1: Video generation</dt><dd id="full-step-video">idle</dd>
+      <dt>Step 2: DaVinci enhancement</dt><dd id="full-step-davinci">idle</dd>
+      <dt>Step 3: Plato analysis</dt><dd id="full-step-analysis">idle</dd>
+      <dt>Step 4: Plato improvement</dt><dd id="full-step-improvement">idle</dd>
+      <dt>Step 5: Re-analysis</dt><dd id="full-step-reanalysis">idle</dd>
+      <dt>Step 6: Telegram delivery</dt><dd id="full-step-delivery">idle</dd>
+      <dt>Step 7: Cleanup</dt><dd id="full-step-cleanup">idle</dd>
+      <dt>Overall status</dt><dd id="full-step-overall">idle</dd>
+    </dl>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>VideoAutoPipeline Tools</h2></div>
+    <div class="action-row">
+      <button id="vap-open-gui" type="button">Open VideoAutoPipeline GUI</button>
+      <button id="vap-batch-dry-run" type="button">Dry-run Batch</button>
+      <button id="vap-resume-failed" type="button">Resume Failed Job</button>
+      <button id="vap-status-run" type="button">Show Latest Pipeline Status</button>
+      <button id="vap-show-output-root" type="button">Show Latest Output Folder</button>
+    </div>
+  </article>
+
+  <article class="panel operator-step">
+    <div class="section-title"><h2>Plato Quality Gate</h2></div>
+    <div class="action-row">
+      <button id="simple-check-fix" type="button">Check &amp; Fix With Plato</button>
+      <button id="vap-process-waiting" type="button">Process Waiting For Plato</button>
+      <button id="simple-send-telegram" type="button">Send Approved To Telegram</button>
+    </div>
+  </article>
 </section>
 
 <details class="panel" id="operator-advanced">
@@ -46,7 +144,7 @@
     <div class="section-title"><h2>2. Select Input Folder</h2></div>
     <label for="folder-input">Manual folder path</label>
     <input id="folder-input" type="text" value="{{ operator.detection.recommended_input_folder or operator.suggested.manual_folder }}" placeholder="data\temp\manual_videoautopipeline_outputs">
-    <p id="folder-warning" class="muted">If no folder is found, create <code>data\temp\manual_videoautopipeline_outputs</code>, put one or more .mp4 files inside, then use that path here.</p>
+    <p class="muted">If no folder is found, create <code>data\temp\manual_videoautopipeline_outputs</code>, put one or more .mp4 files inside, then use that path here.</p>
   </article>
 
   <article class="panel operator-step">
@@ -98,20 +196,29 @@
     <input id="vap-root-input" type="text" value="{{ operator.videoautopipeline.root }}" placeholder="C:\Users\User\Desktop\Work\VideoAutoPipeline">
     <label for="vap-output-root-input">Output root</label>
     <input id="vap-output-root-input" type="text" value="{{ operator.videoautopipeline.output_root }}" placeholder="C:\Users\User\Desktop\Work\VideoAutoPipeline\data\output">
-    <label for="vap-input-video">Input video path</label>
-    <input id="vap-input-video" type="text" placeholder="C:\path\video.mp4">
-    <label for="vap-input-folder">Input folder path</label>
-    <input id="vap-input-folder" type="text" placeholder="C:\path\folder">
-    <label for="vap-limit-input">Limit</label>
-    <input id="vap-limit-input" type="number" min="1" step="1" placeholder="3">
-    <label class="check-row"><input id="vap-dry-run" type="checkbox" checked> Dry-run Plato processing</label>
+    <label for="vap-send-mode">SEND_MODE</label>
+    <select id="vap-send-mode">
+      <option value="after_plato" selected>after_plato</option>
+      <option value="disabled">disabled</option>
+      <option value="immediate">immediate</option>
+    </select>
     <label class="check-row"><input id="vap-auto-fix" type="checkbox" checked> Auto-fix</label>
     <label class="check-row"><input id="vap-copy-results" type="checkbox" checked> Copy results</label>
-    <label class="check-row"><input id="vap-send-telegram" type="checkbox"> Send Telegram after Plato approval</label>
+    <label for="vap-davinci-mode">DaVinci mode</label>
+    <select id="vap-davinci-mode">
+      <option value="required" selected>required</option>
+      <option value="optional">optional</option>
+      <option value="disabled">disabled</option>
+    </select>
+    <label class="check-row"><input id="vap-allow-original-publishable" type="checkbox" checked> Allow send without fix only if publishable</label>
+    <label class="check-row"><input id="vap-force-reject-improvement-unavailable" type="checkbox" checked> Force reject if Plato improvement unavailable</label>
+    <label class="check-row"><input id="vap-keep-final-only" type="checkbox"> Keep only final approved video after successful delivery</label>
+    <label class="check-row"><input id="vap-cleanup-dry-run" type="checkbox" checked> Cleanup dry-run</label>
+    <details>
+      <summary>Cleanup danger zone</summary>
+      <label class="check-row"><input id="vap-allow-source-delete" type="checkbox"> Allow source delete</label>
+    </details>
     <div class="action-row">
-      <button id="simple-generate-videos" class="primary" type="button">Generate Videos</button>
-      <button id="simple-check-fix" type="button">Check &amp; Fix With Plato</button>
-      <button id="simple-send-telegram" type="button">Send Approved To Telegram</button>
       <button id="vap-worker-run" type="button">Run VideoAutoPipeline Worker</button>
       <button id="vap-batch-run" type="button">Run VideoAutoPipeline Batch</button>
       <button id="vap-process-outputs" type="button">Process VideoAutoPipeline Outputs With Plato</button>
@@ -167,12 +274,12 @@
 </section>
 
 <section class="panel">
-  <div class="section-title"><h2>Jobs</h2><a href="/api/operator/jobs">JSON</a></div>
+  <div class="section-title"><h2>Job History</h2><a href="/api/operator/jobs">JSON</a></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Created</th><th>Type</th><th>Status</th><th>Command</th></tr></thead>
+      <thead><tr><th>Created</th><th>Action</th><th>Status</th><th>Return code</th><th>Duration</th><th>Latest line</th><th>Command</th></tr></thead>
       <tbody id="jobs-body">
-        <tr><td colspan="4">No jobs yet.</td></tr>
+        <tr><td colspan="7">No jobs yet.</td></tr>
       </tbody>
     </table>
   </div>
@@ -207,14 +314,13 @@ const backupDirInput = document.getElementById("backup-dir-input");
 const rollbackLogInput = document.getElementById("rollback-log-input");
 const replaceStatus = document.getElementById("replace-status");
 const replaceLog = document.getElementById("replace-log");
-const simpleVapInput = document.getElementById("simple-vap-input");
-const simpleVapLimit = document.getElementById("simple-vap-limit");
-const simpleVapDryRun = document.getElementById("simple-vap-dry-run");
-const simpleVapSendTelegram = document.getElementById("simple-vap-send-telegram");
 const fullStepVideo = document.getElementById("full-step-video");
-const fullStepQc = document.getElementById("full-step-qc");
-const fullStepFix = document.getElementById("full-step-fix");
+const fullStepDavinci = document.getElementById("full-step-davinci");
+const fullStepAnalysis = document.getElementById("full-step-analysis");
+const fullStepImprovement = document.getElementById("full-step-improvement");
+const fullStepReanalysis = document.getElementById("full-step-reanalysis");
 const fullStepDelivery = document.getElementById("full-step-delivery");
+const fullStepCleanup = document.getElementById("full-step-cleanup");
 const fullStepOverall = document.getElementById("full-step-overall");
 const vapRootInput = document.getElementById("vap-root-input");
 const vapOutputRootInput = document.getElementById("vap-output-root-input");
@@ -224,15 +330,50 @@ const vapLimitInput = document.getElementById("vap-limit-input");
 const vapDryRun = document.getElementById("vap-dry-run");
 const vapAutoFix = document.getElementById("vap-auto-fix");
 const vapCopyResults = document.getElementById("vap-copy-results");
+const vapDavinciMode = document.getElementById("vap-davinci-mode");
+const vapSendMode = document.getElementById("vap-send-mode");
 const vapSendTelegram = document.getElementById("vap-send-telegram");
+const vapKeepFinalOnly = document.getElementById("vap-keep-final-only");
+const vapCleanupDryRun = document.getElementById("vap-cleanup-dry-run");
 const vapStatusOutputRoot = document.getElementById("vap-status-output-root");
 const vapStatusLatestJob = document.getElementById("vap-status-latest-job");
 const vapStatusPlatoJob = document.getElementById("vap-status-plato-job");
 const vapStatusWaiting = document.getElementById("vap-status-waiting");
 const vapStatusSummary = document.getElementById("vap-status-summary");
+const controlRoom = {
+  vap: document.getElementById("cr-vap-status"),
+  plato: document.getElementById("cr-plato-status"),
+  telegram: document.getElementById("cr-telegram-status"),
+  currentJobStatus: document.getElementById("cr-current-job-status"),
+  empty: document.getElementById("cr-empty-state"),
+  inputPath: document.getElementById("cr-input-path"),
+  stage: document.getElementById("cr-stage"),
+  elapsed: document.getElementById("cr-elapsed"),
+  heartbeat: document.getElementById("cr-heartbeat"),
+  failedStep: document.getElementById("cr-failed-step"),
+  reason: document.getElementById("cr-reason"),
+  stdoutTail: document.getElementById("cr-stdout-tail"),
+  stderrTail: document.getElementById("cr-stderr-tail"),
+  finalMessage: document.getElementById("cr-final-message"),
+  approvedOutput: document.getElementById("cr-approved-output"),
+  sourceFinal: document.getElementById("cr-source-final"),
+  platoScore: document.getElementById("cr-plato-score"),
+  platoVerdict: document.getElementById("cr-plato-verdict"),
+  platoBucket: document.getElementById("cr-plato-bucket"),
+  deliveryStatus: document.getElementById("cr-delivery-status"),
+  finalTelegram: document.getElementById("cr-final-telegram"),
+  finalReason: document.getElementById("cr-final-reason"),
+};
 const buttons = {
   fullPipelineRun: document.getElementById("full-pipeline-run"),
-  simpleGenerateVideos: document.getElementById("simple-generate-videos"),
+  vapGenerateLongvideos: document.getElementById("vap-generate-longvideos"),
+  vapGenerateOneVideo: document.getElementById("vap-generate-one-video"),
+  vapBatchGenerateFolder: document.getElementById("vap-batch-generate-folder"),
+  vapOpenGui: document.getElementById("vap-open-gui"),
+  vapBatchDryRun: document.getElementById("vap-batch-dry-run"),
+  vapResumeFailed: document.getElementById("vap-resume-failed"),
+  vapStatusRun: document.getElementById("vap-status-run"),
+  vapShowOutputRoot: document.getElementById("vap-show-output-root"),
   simpleCheckFix: document.getElementById("simple-check-fix"),
   simpleSendTelegram: document.getElementById("simple-send-telegram"),
   detect: document.getElementById("detect-outputs"),
@@ -245,10 +386,17 @@ const buttons = {
   vapDeliveryScan: document.getElementById("vap-delivery-scan"),
   vapDeliveryProcess: document.getElementById("vap-delivery-process"),
   vapDeliverySend: document.getElementById("vap-delivery-send"),
+  vapProcessWaiting: document.getElementById("vap-process-waiting"),
   vapWorkerRun: document.getElementById("vap-worker-run"),
   vapBatchRun: document.getElementById("vap-batch-run"),
   vapProcessOutputs: document.getElementById("vap-process-outputs"),
   vapFullFlow: document.getElementById("vap-full-flow"),
+  retryFullPipeline: document.getElementById("retry-full-pipeline"),
+  retryPlatoOnly: document.getElementById("retry-plato-only"),
+  retryDeliveryOnly: document.getElementById("retry-delivery-only"),
+  openFinalFolder: document.getElementById("open-final-folder"),
+  copyFinalPath: document.getElementById("copy-final-path"),
+  openDeliverySummary: document.getElementById("open-delivery-summary"),
   watchStart: document.getElementById("watch-start"),
   watchStop: document.getElementById("watch-stop"),
   refresh: document.getElementById("refresh-status"),
@@ -292,31 +440,28 @@ function vapPayload() {
     dry_run: vapDryRun.checked,
     auto_fix: vapAutoFix.checked,
     copy_results: vapCopyResults.checked,
+    davinci_mode: vapDavinciMode.value,
+    send_mode: vapSendMode.value,
     send_telegram: vapSendTelegram.checked,
+    cleanup_mode: vapKeepFinalOnly.checked ? (vapCleanupDryRun.checked ? "dry_run" : "keep_final_only") : "keep_all",
   };
 }
 
 function simpleVapPayload() {
-  const value = simpleVapInput.value.trim();
   const payload = vapPayload();
-  payload.dry_run = simpleVapDryRun.checked;
-  payload.auto_fix = true;
-  payload.copy_results = true;
-  payload.limit = simpleVapLimit.value.trim();
-  payload.send_telegram = simpleVapSendTelegram.checked;
-  if (value.toLowerCase().endsWith(".mp4")) {
-    payload.input_video = value;
-    payload.input_folder = "";
-  } else {
-    payload.input_folder = value;
-    payload.input_video = "";
-  }
   return payload;
 }
 
 function setBusy(running) {
   buttons.fullPipelineRun.disabled = running;
-  buttons.simpleGenerateVideos.disabled = running;
+  buttons.vapGenerateLongvideos.disabled = running;
+  buttons.vapGenerateOneVideo.disabled = running;
+  buttons.vapBatchGenerateFolder.disabled = running;
+  buttons.vapOpenGui.disabled = running;
+  buttons.vapBatchDryRun.disabled = running;
+  buttons.vapResumeFailed.disabled = running;
+  buttons.vapStatusRun.disabled = running;
+  buttons.vapShowOutputRoot.disabled = running;
   buttons.simpleCheckFix.disabled = running;
   buttons.simpleSendTelegram.disabled = running;
   buttons.autoQc.disabled = running;
@@ -327,10 +472,14 @@ function setBusy(running) {
   buttons.vapDeliveryScan.disabled = running;
   buttons.vapDeliveryProcess.disabled = running;
   buttons.vapDeliverySend.disabled = running;
+  buttons.vapProcessWaiting.disabled = running;
   buttons.vapWorkerRun.disabled = running;
   buttons.vapBatchRun.disabled = running;
   buttons.vapProcessOutputs.disabled = running;
   buttons.vapFullFlow.disabled = running;
+  buttons.retryFullPipeline.disabled = running;
+  buttons.retryPlatoOnly.disabled = running;
+  buttons.retryDeliveryOnly.disabled = running;
   buttons.watchStart.disabled = running;
   buttons.dryRun.disabled = running;
 }
@@ -343,7 +492,7 @@ function showActionResult(payload) {
   }
   folderWarning.className = "muted";
   const warnings = payload.warnings || [];
-  folderWarning.textContent = warnings.length ? warnings.join(" ") : "Action started.";
+  folderWarning.textContent = payload.message || payload.latest_output_folder || (warnings.length ? warnings.join(" ") : "Action started.");
 }
 
 function parseFullSummary(job) {
@@ -364,7 +513,8 @@ function setStepText(node, step) {
     node.textContent = "idle";
     return;
   }
-  node.textContent = step.reason ? `${step.status} - ${step.reason}` : step.status;
+  const detail = step.reason || step.error || step.verdict || step.telegram_status || "";
+  node.textContent = detail ? `${step.status} - ${detail}` : step.status;
 }
 
 function updateFullPipelineSteps(current, last) {
@@ -372,30 +522,115 @@ function updateFullPipelineSteps(current, last) {
   const summary = parseFullSummary(job);
   if (summary && summary.steps) {
     setStepText(fullStepVideo, summary.steps.video_generation);
-    setStepText(fullStepQc, summary.steps.plato_qc);
-    setStepText(fullStepFix, summary.steps.auto_fix);
+    setStepText(fullStepDavinci, summary.steps.davinci);
+    setStepText(fullStepAnalysis, summary.steps.plato_analysis);
+    setStepText(fullStepImprovement, summary.steps.plato_improvement);
+    setStepText(fullStepReanalysis, summary.steps.reanalysis);
     setStepText(fullStepDelivery, summary.steps.delivery);
+    setStepText(fullStepCleanup, summary.steps.cleanup);
     fullStepOverall.textContent = summary.failed_step ? `${summary.overall_status} - ${summary.failed_step}` : summary.overall_status;
     return;
   }
   if (job && job.status === "running") {
     fullStepVideo.textContent = "running";
-    fullStepQc.textContent = "pending";
-    fullStepFix.textContent = "pending";
+    fullStepDavinci.textContent = "pending";
+    fullStepAnalysis.textContent = "pending";
+    fullStepImprovement.textContent = "pending";
+    fullStepReanalysis.textContent = "pending";
     fullStepDelivery.textContent = "pending";
+    fullStepCleanup.textContent = "pending";
     fullStepOverall.textContent = "running";
     return;
   }
   fullStepVideo.textContent = "idle";
-  fullStepQc.textContent = "idle";
-  fullStepFix.textContent = "idle";
+  fullStepDavinci.textContent = "idle";
+  fullStepAnalysis.textContent = "idle";
+  fullStepImprovement.textContent = "idle";
+  fullStepReanalysis.textContent = "idle";
   fullStepDelivery.textContent = "idle";
+  fullStepCleanup.textContent = "idle";
   fullStepOverall.textContent = "idle";
 }
 
+function textOrDash(value) {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+function formatSeconds(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  const total = Number(value);
+  if (!Number.isFinite(total)) {
+    return "-";
+  }
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function pathToFileUrl(path) {
+  if (!path) {
+    return "";
+  }
+  return `file:///${String(path).replace(/\\/g, "/")}`;
+}
+
+function renderControlRoom(control) {
+  const bar = control.status_bar || {};
+  const run = control.current_run || {};
+  const finalOutput = control.final_output || {};
+  controlRoom.vap.textContent = textOrDash(bar.videoautopipeline);
+  controlRoom.plato.textContent = textOrDash(bar.plato);
+  controlRoom.telegram.textContent = textOrDash(bar.telegram);
+  controlRoom.currentJobStatus.textContent = textOrDash(bar.current_job);
+  controlRoom.empty.textContent = run.empty ? "No active run." : "";
+  controlRoom.inputPath.textContent = textOrDash(run.input_path);
+  controlRoom.stage.textContent = textOrDash(run.current_stage);
+  controlRoom.elapsed.textContent = formatSeconds(run.elapsed_seconds);
+  controlRoom.heartbeat.textContent = textOrDash(run.latest_heartbeat);
+  controlRoom.failedStep.textContent = textOrDash(run.failed_step);
+  controlRoom.reason.textContent = textOrDash(run.reason);
+  controlRoom.stdoutTail.textContent = run.stdout_tail || "-";
+  controlRoom.stderrTail.textContent = run.stderr_tail || "-";
+  controlRoom.finalMessage.textContent = finalOutput.message || "";
+  controlRoom.approvedOutput.textContent = textOrDash(finalOutput.approved_output_path);
+  controlRoom.sourceFinal.textContent = textOrDash(finalOutput.source_final_path);
+  controlRoom.platoScore.textContent = textOrDash(finalOutput.plato_score);
+  controlRoom.platoVerdict.textContent = textOrDash(finalOutput.plato_verdict);
+  controlRoom.platoBucket.textContent = textOrDash(finalOutput.plato_bucket);
+  controlRoom.deliveryStatus.textContent = textOrDash(finalOutput.delivery_status);
+  controlRoom.finalTelegram.textContent = textOrDash(finalOutput.telegram_status);
+  controlRoom.finalReason.textContent = textOrDash(finalOutput.reason);
+  buttons.openFinalFolder.dataset.path = finalOutput.approved_output_path || "";
+  buttons.copyFinalPath.dataset.path = finalOutput.approved_output_path || "";
+  buttons.openDeliverySummary.dataset.path = finalOutput.delivery_summary_path || "";
+  buttons.openFinalFolder.disabled = !finalOutput.approved_output_path;
+  buttons.copyFinalPath.disabled = !finalOutput.approved_output_path;
+  buttons.openDeliverySummary.disabled = !finalOutput.delivery_summary_path;
+}
+
+function renderJobHistory(rows) {
+  const html = (rows || []).map((job) => `
+    <tr>
+      <td>${escapeHtml(job.created_at)}</td>
+      <td>${escapeHtml(job.action || job.job_type)}</td>
+      <td><span class="status">${escapeHtml(job.status)}</span></td>
+      <td>${escapeHtml(job.return_code === null || job.return_code === undefined ? "-" : job.return_code)}</td>
+      <td>${escapeHtml(formatSeconds(job.duration_seconds))}</td>
+      <td class="path-text">${escapeHtml(job.latest_line || "")}</td>
+      <td class="path-text">${escapeHtml(job.command)}</td>
+    </tr>
+  `).join("");
+  jobsBody.innerHTML = html || '<tr><td colspan="7">No jobs yet.</td></tr>';
+}
+
 async function refreshStatus() {
-  const status = await fetch("/api/operator/status").then((response) => response.json());
-  const jobs = await fetch("/api/operator/jobs").then((response) => response.json());
+  const [status, jobs, control] = await Promise.all([
+    fetch("/api/operator/status").then((response) => response.json()),
+    fetch("/api/operator/jobs").then((response) => response.json()),
+    fetch("/api/operator/control-room-status").then((response) => response.json()),
+  ]);
   const state = status.jobs || {};
   const watch = state.watch_mode || {};
   const current = state.current_job || null;
@@ -423,17 +658,10 @@ async function refreshStatus() {
   stderrTail.textContent = (last && last.stderr_tail) || "-";
   resultSummary.textContent = last && last.result_summary ? JSON.stringify(last.result_summary) : "";
   updateFullPipelineSteps(current, last);
+  renderControlRoom(control);
   setBusy(Boolean(current));
 
-  const rows = (jobs.jobs || []).map((job) => `
-    <tr>
-      <td>${escapeHtml(job.created_at)}</td>
-      <td>${escapeHtml(job.job_type)}</td>
-      <td><span class="status">${escapeHtml(job.status)}</span></td>
-      <td class="path-text">${escapeHtml(job.command)}</td>
-    </tr>
-  `).join("");
-  jobsBody.innerHTML = rows || '<tr><td colspan="4">No jobs yet.</td></tr>';
+  renderJobHistory(control.job_history || jobs.jobs || []);
 
   const detection = status.detection || {};
   if (detection.recommended_input_folder && !folderInput.value.trim()) {
@@ -457,8 +685,36 @@ buttons.fullPipelineRun.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/full-pipeline-run", simpleVapPayload()));
   refreshStatus();
 });
-buttons.simpleGenerateVideos.addEventListener("click", async () => {
-  showActionResult(await postJson("/api/operator/full-videoautopipeline-flow", simpleVapPayload()));
+buttons.vapGenerateLongvideos.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-generate-longvideos", vapPayload()));
+  refreshStatus();
+});
+buttons.vapGenerateOneVideo.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-generate-one-video", vapPayload()));
+  refreshStatus();
+});
+buttons.vapBatchGenerateFolder.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-batch-generate-folder", vapPayload()));
+  refreshStatus();
+});
+buttons.vapOpenGui.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/open-videoautopipeline-gui", vapPayload()));
+  refreshStatus();
+});
+buttons.vapBatchDryRun.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-batch-dry-run", vapPayload()));
+  refreshStatus();
+});
+buttons.vapResumeFailed.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-resume-failed", vapPayload()));
+  refreshStatus();
+});
+buttons.vapStatusRun.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-status", vapPayload()));
+  refreshStatus();
+});
+buttons.vapShowOutputRoot.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/vap-show-output-root", vapPayload()));
   refreshStatus();
 });
 buttons.simpleCheckFix.addEventListener("click", async () => {
@@ -468,7 +724,7 @@ buttons.simpleCheckFix.addEventListener("click", async () => {
 buttons.simpleSendTelegram.addEventListener("click", async () => {
   const payload = simpleVapPayload();
   payload.send_telegram = true;
-  showActionResult(await postJson("/api/operator/process-videoautopipeline-outputs", payload));
+  showActionResult(await postJson("/api/operator/send-approved-to-telegram", payload));
   refreshStatus();
 });
 
@@ -512,6 +768,10 @@ buttons.vapDeliverySend.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/vap-delivery/send", folderPayload()));
   refreshStatus();
 });
+buttons.vapProcessWaiting.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/process-waiting-for-plato", vapPayload()));
+  refreshStatus();
+});
 buttons.vapWorkerRun.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/videoautopipeline-worker", vapPayload()));
   refreshStatus();
@@ -527,6 +787,42 @@ buttons.vapProcessOutputs.addEventListener("click", async () => {
 buttons.vapFullFlow.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/full-videoautopipeline-flow", vapPayload()));
   refreshStatus();
+});
+buttons.retryFullPipeline.addEventListener("click", async () => {
+  showActionResult(await postJson("/api/operator/retry-full-pipeline", simpleVapPayload()));
+  refreshStatus();
+});
+buttons.retryPlatoOnly.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  payload.send_telegram = false;
+  showActionResult(await postJson("/api/operator/retry-plato-only", payload));
+  refreshStatus();
+});
+buttons.retryDeliveryOnly.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  payload.dry_run = true;
+  payload.send_telegram = false;
+  showActionResult(await postJson("/api/operator/retry-delivery-only", payload));
+  refreshStatus();
+});
+buttons.openFinalFolder.addEventListener("click", () => {
+  const path = buttons.openFinalFolder.dataset.path || "";
+  const folder = path.replace(/[\\/][^\\/]+$/, "");
+  if (folder) {
+    window.open(pathToFileUrl(folder), "_blank");
+  }
+});
+buttons.copyFinalPath.addEventListener("click", async () => {
+  const path = buttons.copyFinalPath.dataset.path || "";
+  if (path && navigator.clipboard) {
+    await navigator.clipboard.writeText(path);
+  }
+});
+buttons.openDeliverySummary.addEventListener("click", () => {
+  const path = buttons.openDeliverySummary.dataset.path || "";
+  if (path) {
+    window.open(pathToFileUrl(path), "_blank");
+  }
 });
 buttons.watchStart.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/watch/start", folderPayload()));

@@ -415,6 +415,47 @@ select {
   gap: 18px;
 }
 
+.operator-main-grid {
+  grid-template-columns: minmax(280px, 1.3fr) minmax(240px, 1fr) minmax(240px, 1fr);
+}
+
+.operator-run-settings {
+  margin-top: 12px;
+}
+
+.operator-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(120px, 160px);
+  gap: 12px;
+  align-items: end;
+}
+
+.control-status-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.status-tile {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.status-tile span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status-tile strong {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 .operator-step {
   margin-top: 0;
 }
@@ -432,13 +473,23 @@ select {
   white-space: pre-wrap;
 }
 
+.operator-tail-small {
+  max-height: 120px;
+}
+
 @media (max-width: 900px) {
   .metric-grid,
   .score-grid,
   .verdict-grid,
   .split,
+  .operator-settings-grid,
+  .control-status-bar,
   .operator-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operator-main-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -454,6 +505,8 @@ select {
   .score-grid,
   .verdict-grid,
   .split,
+  .operator-settings-grid,
+  .control-status-bar,
   .operator-grid {
     grid-template-columns: 1fr;
   }

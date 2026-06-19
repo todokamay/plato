@@ -6,6 +6,7 @@ from modules.health_engine import system_health
 from modules.history_engine import history_entries, history_summary
 from modules.job_runner import get_job, list_jobs
 from modules.operator_actions import (
+    control_room_status,
     operator_status,
     start_auto_qc_job,
     start_auto_qc_replace_job,
@@ -15,14 +16,27 @@ from modules.operator_actions import (
     start_production_diagnostics_job,
     start_replace_rollback_job,
     start_full_videoautopipeline_flow_job,
+    start_open_videoautopipeline_gui_job,
     start_process_videoautopipeline_outputs_job,
+    start_process_waiting_for_plato_job,
+    start_retry_delivery_only_job,
+    start_retry_full_pipeline_job,
+    start_retry_plato_only_job,
+    start_send_approved_to_telegram_job,
+    start_vap_batch_dry_run_job,
     start_vap_delivery_process_job,
     start_vap_delivery_scan_job,
     start_vap_delivery_send_job,
+    start_vap_generate_longvideos_job,
+    start_vap_generate_one_video_job,
+    start_vap_batch_generate_folder_job,
+    start_vap_resume_failed_job,
+    start_vap_status_job,
     start_videoautopipeline_batch_job,
     start_videoautopipeline_worker_job,
     start_watch_job,
     stop_watch_job,
+    vap_show_output_root,
 )
 from modules.orchestrator import orchestrator_status
 from modules.production_diagnostics import production_diagnostics_snapshot
@@ -95,6 +109,11 @@ def _bool_from_body(data: dict, key: str, default: bool = False) -> bool:
 @router.get("/operator/status")
 def api_operator_status():
     return _safe_payload(operator_status, {"ok": False, "jobs": {}, "queue": {}})
+
+
+@router.get("/operator/control-room-status")
+def api_operator_control_room_status():
+    return _safe_payload(control_room_status, {"ok": False, "status_bar": {}, "current_run": {}, "final_output": {}, "job_history": []})
 
 
 @router.post("/operator/detect")
@@ -178,6 +197,84 @@ async def api_operator_videoautopipeline_worker(request: Request):
     )
 
 
+@router.post("/operator/open-videoautopipeline-gui")
+async def api_operator_open_videoautopipeline_gui(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_open_videoautopipeline_gui_job(_text_from_body(data, "vap_root")),
+        {"ok": False, "error": "Could not open VideoAutoPipeline GUI."},
+    )
+
+
+@router.post("/operator/vap-generate-longvideos")
+async def api_operator_vap_generate_longvideos(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_generate_longvideos_job(_text_from_body(data, "vap_root"), _text_from_body(data, "output_root"), data.get("limit")),
+        {"ok": False, "error": "Could not generate from LongVideos."},
+    )
+
+
+@router.post("/operator/vap-generate-one-video")
+async def api_operator_vap_generate_one_video(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_generate_one_video_job(_text_from_body(data, "vap_root"), _text_from_body(data, "input_video"), _text_from_body(data, "output_root")),
+        {"ok": False, "error": "Could not generate one video."},
+    )
+
+
+@router.post("/operator/vap-batch-generate-folder")
+async def api_operator_vap_batch_generate_folder(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_batch_generate_folder_job(_text_from_body(data, "vap_root"), _text_from_body(data, "input_folder"), _text_from_body(data, "output_root"), data.get("limit")),
+        {"ok": False, "error": "Could not batch generate folder."},
+    )
+
+
+@router.post("/operator/vap-batch-dry-run")
+async def api_operator_vap_batch_dry_run(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_batch_dry_run_job(_text_from_body(data, "vap_root"), _text_from_body(data, "input_folder"), _text_from_body(data, "output_root"), data.get("limit")),
+        {"ok": False, "error": "Could not dry-run batch."},
+    )
+
+
+@router.post("/operator/vap-resume-failed")
+async def api_operator_vap_resume_failed(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_resume_failed_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "output_root"),
+            input_video=_text_from_body(data, "input_video"),
+            input_folder=_text_from_body(data, "input_folder"),
+            limit=data.get("limit"),
+        ),
+        {"ok": False, "error": "Could not resume failed VideoAutoPipeline job."},
+    )
+
+
+@router.post("/operator/vap-status")
+async def api_operator_vap_status(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_status_job(_text_from_body(data, "vap_root"), _text_from_body(data, "input_video"), _text_from_body(data, "output_root")),
+        {"ok": False, "error": "Could not show VideoAutoPipeline worker status."},
+    )
+
+
+@router.post("/operator/vap-show-output-root")
+async def api_operator_vap_show_output_root(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: vap_show_output_root(_text_from_body(data, "output_root")),
+        {"ok": False, "error": "Could not show VideoAutoPipeline output root."},
+    )
+
+
 @router.post("/operator/videoautopipeline-batch")
 async def api_operator_videoautopipeline_batch(request: Request):
     data = await _json_body(request)
@@ -207,6 +304,29 @@ async def api_operator_process_videoautopipeline_outputs(request: Request):
     )
 
 
+@router.post("/operator/process-waiting-for-plato")
+async def api_operator_process_waiting_for_plato(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_process_waiting_for_plato_job(
+            _text_from_body(data, "output_root"),
+            dry_run=_bool_from_body(data, "dry_run", True),
+            auto_fix=_bool_from_body(data, "auto_fix", True),
+            copy_results=_bool_from_body(data, "copy_results", True),
+        ),
+        {"ok": False, "error": "Could not process waiting VideoAutoPipeline jobs."},
+    )
+
+
+@router.post("/operator/send-approved-to-telegram")
+async def api_operator_send_approved_to_telegram(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_send_approved_to_telegram_job(_text_from_body(data, "output_root")),
+        {"ok": False, "error": "Could not send approved clips to Telegram."},
+    )
+
+
 @router.post("/operator/full-videoautopipeline-flow")
 async def api_operator_full_videoautopipeline_flow(request: Request):
     data = await _json_body(request)
@@ -221,6 +341,8 @@ async def api_operator_full_videoautopipeline_flow(request: Request):
             auto_fix=_bool_from_body(data, "auto_fix", True),
             copy_results=_bool_from_body(data, "copy_results", True),
             send_telegram=_bool_from_body(data, "send_telegram", False),
+            davinci_mode=_text_from_body(data, "davinci_mode") or "required",
+            cleanup_mode=_text_from_body(data, "cleanup_mode") or "keep_all",
         ),
         {"ok": False, "error": "Could not run full VideoAutoPipeline to Plato flow."},
     )
@@ -229,6 +351,24 @@ async def api_operator_full_videoautopipeline_flow(request: Request):
 @router.post("/operator/full-pipeline-run")
 async def api_operator_full_pipeline_run(request: Request):
     return await api_operator_full_videoautopipeline_flow(request)
+
+
+@router.post("/operator/retry-full-pipeline")
+async def api_operator_retry_full_pipeline(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_retry_full_pipeline_job(data), {"ok": False, "error": "Could not retry full pipeline."})
+
+
+@router.post("/operator/retry-plato-only")
+async def api_operator_retry_plato_only(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_retry_plato_only_job(data), {"ok": False, "error": "Could not retry Plato processing."})
+
+
+@router.post("/operator/retry-delivery-only")
+async def api_operator_retry_delivery_only(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(lambda: start_retry_delivery_only_job(data), {"ok": False, "error": "Could not retry delivery."})
 
 
 @router.post("/operator/watch/start")
