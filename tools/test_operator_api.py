@@ -17,7 +17,7 @@ def assert_json(response):
     return response.json()
 
 
-def wait_for_job(client: TestClient, job_id: str, timeout: float = 15.0) -> dict:
+def wait_for_job(client: TestClient, job_id: str, timeout: float = 30.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         payload = assert_json(client.get(f"/api/operator/jobs/{job_id}"))

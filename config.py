@@ -9,6 +9,7 @@ VIDEOAUTOPIPELINE_ROOT = Path(os.environ.get("VIDEOAUTOPIPELINE_ROOT") or r"C:\U
 VIDEOAUTOPIPELINE_OUTPUT_ROOT = Path(
     os.environ.get("VIDEOAUTOPIPELINE_OUTPUT_ROOT") or VIDEOAUTOPIPELINE_ROOT / "data" / "output"
 )
+CLEANUP_MODE = os.environ.get("CLEANUP_MODE") or "keep_all"
 
 UPLOAD_DIR = "data/uploads"
 FRAMES_DIR = "data/frames"

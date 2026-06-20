@@ -440,6 +440,7 @@ async def api_operator_full_videoautopipeline_flow(request: Request):
             send_telegram=_bool_from_body(data, "send_telegram", False),
             davinci_mode=_text_from_body(data, "davinci_mode") or "required",
             cleanup_mode=_text_from_body(data, "cleanup_mode") or "keep_all",
+            confirm_cleanup=_bool_from_body(data, "confirm_cleanup", False),
             factory_preset=_text_from_body(data, "factory_preset") or "quality",
             max_candidates=data.get("max_candidates"),
             top_render_count=data.get("top_render_count"),

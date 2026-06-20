@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -12,10 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from modules.final_cleanup import cleanup_after_delivery
 from modules.videoautopipeline_contract import default_delivery_root
 
 SUMMARY_PREFIX = "FULL_PIPELINE_SUMMARY "
 DAVINCI_MODES = {"required", "optional", "disabled"}
+CLEANUP_MODES = {"keep_final_only", "keep_all", "dry_run"}
 FACTORY_PRESETS = {"quality", "balanced", "fast", "archive"}
 WHISPER_MODELS = {"small", "medium", "large-v3"}
 ALLOW_SAFE_PRESETS = {"balanced", "fast"}
@@ -33,6 +35,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--copy-results", action="store_true")
     parser.add_argument("--send-telegram", action="store_true")
     parser.add_argument("--davinci-mode", choices=sorted(DAVINCI_MODES), default="required")
+    parser.add_argument("--cleanup-mode", choices=sorted(CLEANUP_MODES), default="keep_all")
+    parser.add_argument("--confirm-cleanup", action="store_true")
     parser.add_argument("--factory-preset", choices=sorted(FACTORY_PRESETS), default="quality")
     parser.add_argument("--max-candidates", type=int, default=12)
     parser.add_argument("--top-render-count", type=int, default=6)
@@ -57,6 +61,7 @@ def steps_payload() -> dict:
         "plato_improvement": {"status": "pending", "attempted": False, "accepted": False, "fixed_output_path": "", "reason": ""},
         "reanalysis": {"status": "pending", "score": "", "verdict": ""},
         "delivery": {"status": "pending", "sent": False, "telegram_status": "skipped", "approved_output_path": ""},
+        "cleanup": {"status": "pending", "mode": "keep_all", "deleted_count": 0, "reason": ""},
     }
 
 
@@ -228,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         "VAP_WHISPER_MODEL": args.whisper_model,
         "VAP_ALLOW_SAFE_TO_TEST": "true" if args.factory_preset in ALLOW_SAFE_PRESETS else "false",
         "ALLOW_SAFE_TO_TEST": "true" if args.factory_preset in ALLOW_SAFE_PRESETS else "false",
+        "CLEANUP_MODE": args.cleanup_mode,
         "VAP_OUTPUT_DIR": str(Path(args.output_root)),
         "VIDEOAUTOPIPELINE_ROOT": str(vap_root),
         "VIDEOAUTOPIPELINE_OUTPUT_ROOT": str(Path(args.output_root)),
@@ -284,6 +290,7 @@ def main(argv: list[str] | None = None) -> int:
         steps["plato_improvement"].update({"status": "skipped", "reason": "dry run"})
         steps["reanalysis"].update({"status": "skipped", "verdict": "dry run"})
         steps["delivery"].update({"status": "skipped", "telegram_status": "dry_run"})
+        steps["cleanup"].update({"status": "skipped", "mode": args.cleanup_mode, "reason": "dry run"})
         print("FULL_PIPELINE_DRY_RUN no media processed", flush=True)
         return finish(0, steps)
 
@@ -314,6 +321,23 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and not any(row.get("approved_output_path") for row in delivery_payload.get("jobs", [])):
         steps["delivery"]["status"] = "not_sent"
         return finish(1, steps, "delivery")
+    cleanup_mode = "dry_run" if args.dry_run and args.cleanup_mode == "keep_final_only" else args.cleanup_mode
+    steps["cleanup"]["mode"] = cleanup_mode
+    if cleanup_mode == "keep_all":
+        steps["cleanup"].update({"status": "skipped", "reason": "keep_all"})
+    else:
+        cleanup = cleanup_after_delivery(
+            delivery_summary_path,
+            mode=cleanup_mode,
+            confirm=args.confirm_cleanup,
+        )
+        steps["cleanup"].update({
+            "status": "succeeded" if cleanup.get("ok") else "failed",
+            "deleted_count": len(cleanup.get("deleted") or []),
+            "reason": "; ".join(cleanup.get("errors") or cleanup.get("skipped") or []),
+        })
+        if cleanup_mode == "keep_final_only" and not cleanup.get("ok"):
+            return finish(1, steps, "cleanup")
     return finish(0, steps)
 
 

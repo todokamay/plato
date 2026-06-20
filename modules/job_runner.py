@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -340,6 +340,7 @@ def _vap_env(
 ) -> dict[str, str]:
     root, _, output = _vap_paths(vap_root, output_root)
     mode = davinci_mode if davinci_mode in {"required", "optional", "disabled"} else "required"
+    cleanup = cleanup_mode if cleanup_mode in {"keep_final_only", "keep_all", "dry_run"} else "keep_all"
     preset = _factory_preset(factory_preset)
     max_count = _positive_int(max_candidates, 12)
     render_count = _positive_int(top_render_count, 6)
@@ -360,6 +361,7 @@ def _vap_env(
         "VAP_OUTPUT_DIR": str(output),
         "VIDEOAUTOPIPELINE_ROOT": str(root),
         "VIDEOAUTOPIPELINE_OUTPUT_ROOT": str(output),
+        "CLEANUP_MODE": cleanup,
     }
 
 
@@ -386,6 +388,7 @@ def _command_for_action(
     stop_after_approved: int | str | None = 3,
     whisper_model: str = "medium",
     confirm_real_rerender: bool = False,
+    confirm_cleanup: bool = False,
 ) -> tuple[list[str], str]:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
@@ -480,11 +483,14 @@ def _command_for_action(
         if limit:
             args.extend(["--limit", str(limit)])
         args.extend(["--davinci-mode", davinci_mode if davinci_mode in {"required", "optional", "disabled"} else "required"])
+        args.extend(["--cleanup-mode", cleanup_mode if cleanup_mode in {"keep_final_only", "keep_all", "dry_run"} else "keep_all"])
         args.extend(["--factory-preset", _factory_preset(factory_preset)])
         args.extend(["--max-candidates", str(_positive_int(max_candidates, 12))])
         args.extend(["--top-render-count", str(_positive_int(top_render_count, 6))])
         args.extend(["--stop-after-approved", str(_positive_int(stop_after_approved, 3))])
         args.extend(["--whisper-model", _whisper_model(whisper_model)])
+        if confirm_cleanup:
+            args.append("--confirm-cleanup")
         _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=send_telegram)
         return args, "py " + " ".join(args[1:])
     if definition.get("requires_folder") and not folder:
@@ -688,6 +694,7 @@ def start_job(
     stop_after_approved: int | str | None = 3,
     whisper_model: str = "medium",
     confirm_real_rerender: bool = False,
+    confirm_cleanup: bool = False,
     job_file: str | Path = DEFAULT_JOB_FILE,
 ) -> dict:
     definition = ACTION_DEFINITIONS.get(action)
@@ -715,6 +722,7 @@ def start_job(
         stop_after_approved=stop_after_approved,
         whisper_model=whisper_model,
         confirm_real_rerender=confirm_real_rerender,
+        confirm_cleanup=confirm_cleanup,
     )
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
@@ -725,6 +733,7 @@ def start_job(
             vap_root=vap_root,
             output_root=output_root,
             davinci_mode=davinci_mode,
+            cleanup_mode=cleanup_mode,
             factory_preset=factory_preset,
             max_candidates=max_candidates,
             top_render_count=top_render_count,

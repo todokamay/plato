@@ -673,6 +673,7 @@ def start_full_videoautopipeline_flow_job(
     top_render_count=None,
     stop_after_approved=None,
     whisper_model: str = "medium",
+    confirm_cleanup: bool = False,
 ) -> dict:
     root = validate_videoautopipeline_root(vap_root)
     if not root["ok"]:
@@ -707,6 +708,7 @@ def start_full_videoautopipeline_flow_job(
         top_render_count=6 if top_render_count in (None, "") else top_render_count,
         stop_after_approved=3 if stop_after_approved in (None, "") else stop_after_approved,
         whisper_model=whisper_model or "medium",
+        confirm_cleanup=bool(confirm_cleanup),
     )
     return {"ok": True, "job": job, "vap_root": root["vap_root"], "output_root": output["output_root"], "warnings": folder.get("warnings", [])}
 
@@ -975,6 +977,7 @@ def _retry_base_from_latest_full() -> dict:
         "send_telegram": "--send-telegram" in args,
         "davinci_mode": _arg_value(args, "--davinci-mode") or "required",
         "cleanup_mode": _arg_value(args, "--cleanup-mode") or "keep_all",
+        "confirm_cleanup": "--confirm-cleanup" in args,
         "factory_preset": _arg_value(args, "--factory-preset") or "quality",
         "max_candidates": _arg_value(args, "--max-candidates") or "12",
         "top_render_count": _arg_value(args, "--top-render-count") or "6",
@@ -1013,6 +1016,7 @@ def start_retry_full_pipeline_job(data: dict | None = None) -> dict:
         send_telegram=_payload_bool(data, "send_telegram", base.get("send_telegram", False)),
         davinci_mode=_payload_text(data, "davinci_mode", base.get("davinci_mode", "required")) or "required",
         cleanup_mode=_payload_text(data, "cleanup_mode", base.get("cleanup_mode", "keep_all")) or "keep_all",
+        confirm_cleanup=_payload_bool(data, "confirm_cleanup", base.get("confirm_cleanup", False)),
         factory_preset=_payload_text(data, "factory_preset", base.get("factory_preset", "quality")) or "quality",
         max_candidates=_payload_value(data, "max_candidates", base.get("max_candidates") or 12),
         top_render_count=_payload_value(data, "top_render_count", base.get("top_render_count") or 6),

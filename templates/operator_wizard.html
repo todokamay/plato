@@ -301,6 +301,7 @@
     <label class="check-row"><input id="vap-force-reject-improvement-unavailable" type="checkbox" checked> Force reject if Plato improvement unavailable</label>
     <label class="check-row"><input id="vap-keep-final-only" type="checkbox"> Keep only final approved video after successful delivery</label>
     <label class="check-row"><input id="vap-cleanup-dry-run" type="checkbox" checked> Cleanup dry-run</label>
+    <label class="check-row"><input id="vap-confirm-cleanup" type="checkbox"> Confirm cleanup</label>
     <label class="check-row"><input id="vap-confirm-real-rerender" type="checkbox"> Confirm real rerender</label>
     <details>
       <summary>Cleanup danger zone</summary>
@@ -429,6 +430,7 @@ const vapSendMode = document.getElementById("vap-send-mode");
 const vapSendTelegram = document.getElementById("vap-send-telegram");
 const vapKeepFinalOnly = document.getElementById("vap-keep-final-only");
 const vapCleanupDryRun = document.getElementById("vap-cleanup-dry-run");
+const vapConfirmCleanup = document.getElementById("vap-confirm-cleanup");
 const vapConfirmRealRerender = document.getElementById("vap-confirm-real-rerender");
 const vapStatusOutputRoot = document.getElementById("vap-status-output-root");
 const vapStatusLatestJob = document.getElementById("vap-status-latest-job");
@@ -578,6 +580,7 @@ function vapPayload() {
     send_telegram: vapSendTelegram.checked,
     confirm_real_rerender: vapConfirmRealRerender.checked,
     cleanup_mode: vapKeepFinalOnly.checked ? (vapCleanupDryRun.checked ? "dry_run" : "keep_final_only") : "keep_all",
+    confirm_cleanup: vapConfirmCleanup.checked,
   };
 }
 
