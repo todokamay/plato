@@ -28,6 +28,12 @@ def main() -> int:
     assert payload["job"]["job_type"] == "run_videoautopipeline_worker"
 
     html = client.get("/operator").text
+    assert "Video Generation" in html
+    assert "VideoAutoPipeline Tools" in html
+    assert "Plato Quality Gate" in html
+    assert "Open VideoAutoPipeline GUI" in html
+    assert "Generate From LongVideos" in html
+    assert "Process Waiting For Plato" in html
     assert "VideoAutoPipeline &rarr; Plato Flow" in html
     assert "Run VideoAutoPipeline Worker" in html
     assert "Run VideoAutoPipeline Batch" in html
@@ -37,6 +43,7 @@ def main() -> int:
     assert "Dry-run is default" in html
     assert "id=\"vap-dry-run\" type=\"checkbox\" checked" in html
     assert "id=\"vap-send-telegram\" type=\"checkbox\"" in html
+    assert "id=\"vap-send-telegram\" type=\"checkbox\" checked" not in html
 
     after_mtime = external_app.stat().st_mtime if external_app.exists() else None
     assert before_mtime == after_mtime

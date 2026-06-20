@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import REPORTS_DIR, project_path
+from config import REPORTS_DIR, SUPPORTED_EXTENSIONS, project_path
 from modules import db, video_probe
 from modules.auto_fix_evaluator import evaluate_fix, verdict_rank
 from modules.auto_fix_executor import apply_auto_fix_plan
@@ -615,6 +615,8 @@ def run_auto_qc_fix(
     replace_with_fixed: bool = False,
     confirm_replace: bool = False,
     backup_dir: str | Path | None = None,
+    target_file: str | Path | None = None,
+    force_auto_fix: bool = False,
 ) -> dict:
     db.init_db()
     folder = Path(input_folder)
@@ -623,7 +625,13 @@ def run_auto_qc_fix(
 
     run_id = run_id_now()
     output = Path(output_dir) if output_dir else project_path("data/auto_qc_runs") / run_id
-    files = scan_video_files(folder, recursive=recursive, limit=limit)
+    if target_file:
+        target = Path(target_file).resolve()
+        if not target.exists() or not target.is_file() or target.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            raise FileNotFoundError(f"Target video not found: {target}")
+        files = [target]
+    else:
+        files = scan_video_files(folder, recursive=recursive, limit=limit)
     options = {
         "auto_fix": auto_fix,
         "dry_run": dry_run,
@@ -644,6 +652,7 @@ def run_auto_qc_fix(
         "replace_with_fixed": replace_with_fixed,
         "confirm_replace": confirm_replace,
         "backup_dir": str(backup_dir) if backup_dir else "",
+        "force_auto_fix": force_auto_fix,
     }
 
     if dry_run:
@@ -723,7 +732,7 @@ def run_auto_qc_fix(
             plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
             row["auto_fix_plan"] = str(plan_path)
             plan_rows.extend(_plan_rows(source.name, plan))
-            auto_fix_allowed = plan.get("can_auto_fix") and metrics.get("portfolio_bucket") in {BUCKET_QUICK_FIX, BUCKET_HIGH_UPSIDE}
+            auto_fix_allowed = plan.get("can_auto_fix") and (force_auto_fix or metrics.get("portfolio_bucket") in {BUCKET_QUICK_FIX, BUCKET_HIGH_UPSIDE})
             row["auto_fix_allowed"] = bool(auto_fix_allowed)
 
             if auto_fix and auto_fix_allowed:

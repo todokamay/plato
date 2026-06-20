@@ -7,9 +7,13 @@ from pathlib import Path
 
 from config import VIDEOAUTOPIPELINE_OUTPUT_ROOT, VIDEOAUTOPIPELINE_ROOT, project_path
 from modules.batch_qc import scan_video_files
+from modules.delivery_decision_explainer import explain_delivery_row
+from modules.instagram_queue import get_stats as instagram_queue_stats
+from modules.instagram_publisher import latest_publish_result
 from modules.job_runner import DEFAULT_JOB_FILE, list_jobs, operator_state, start_job, stop_running_watch
 from modules.queue_engine import queue_stats
 from modules.replace_diagnostics import replace_diagnostics
+from modules.rerender_requests import get_rerender_stats, list_rerender_requests, rerender_root
 from modules.videoautopipeline_contract import default_delivery_root, find_waiting_jobs
 from modules.videoautopipeline_detector import detect_videoautopipeline_outputs
 
@@ -376,14 +380,152 @@ def vap_show_output_root(output_root: str | Path | None = None) -> dict:
     return {"ok": True, "output_root": output["output_root"], "latest_output_folder": latest, "message": latest or output["output_root"]}
 
 
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_rerender_request_path(path: str | Path | None = None) -> dict:
+    value = str(path or "").strip().strip('"')
+    if not value:
+        latest = (list_rerender_requests("requested") or [{}])[0]
+        value = latest.get("path") or ""
+    if not value:
+        return {"ok": False, "request_path": "", "error": "No requested rerender request found."}
+    request_path = _resolve_path(value)
+    root = rerender_root().resolve()
+    if not _inside(request_path, root):
+        return {"ok": False, "request_path": str(request_path), "error": "Rerender request path must be inside Plato rerender_requests."}
+    if not request_path.exists() or not request_path.is_file() or request_path.suffix.lower() != ".json":
+        return {"ok": False, "request_path": str(request_path), "error": f"Rerender request JSON not found: {request_path}"}
+    return {"ok": True, "request_path": str(request_path)}
+
+
+def _latest_vap_rerender_status(output_root: str | Path | None = None) -> str:
+    output = _resolve_path(output_root, VIDEOAUTOPIPELINE_OUTPUT_ROOT)
+    if not output.exists() or not output.is_dir():
+        return ""
+    candidates = [path for path in output.glob("*/rerender/*/status/*.json") if path.is_file()]
+    return str(max(candidates, key=lambda path: path.stat().st_mtime).resolve()) if candidates else ""
+
+
+def _validate_vap_rerender_status_path(path: str | Path | None = None, output_root: str | Path | None = None) -> dict:
+    value = str(path or "").strip().strip('"') or _latest_vap_rerender_status(output_root)
+    if not value:
+        return {"ok": False, "status_path": "", "error": "No VideoAutoPipeline rerender status JSON found."}
+    status_path = _resolve_path(value)
+    output = _resolve_path(output_root, VIDEOAUTOPIPELINE_OUTPUT_ROOT)
+    if not _inside(status_path, output):
+        return {"ok": False, "status_path": str(status_path), "error": "Rerender status path must be inside VideoAutoPipeline output root."}
+    if not status_path.exists() or not status_path.is_file() or status_path.suffix.lower() != ".json":
+        return {"ok": False, "status_path": str(status_path), "error": f"Rerender status JSON not found: {status_path}"}
+    return {"ok": True, "status_path": str(status_path)}
+
+
+def start_vap_dry_run_rerender_request_job(
+    vap_root: str | Path | None = None,
+    request_path: str | Path | None = None,
+    output_root: str | Path | None = None,
+) -> dict:
+    root = validate_videoautopipeline_root(vap_root)
+    if not root["ok"]:
+        return {"ok": False, "error": root["error"], "vap_root": root.get("vap_root")}
+    output = validate_videoautopipeline_output_root(output_root)
+    if not output["ok"]:
+        return {"ok": False, "error": output["error"], "output_root": output.get("output_root")}
+    request = _validate_rerender_request_path(request_path)
+    if not request["ok"]:
+        return {"ok": False, "error": request["error"], "request_path": request.get("request_path")}
+    job = start_job("vap_dry_run_rerender_request", input_file=request["request_path"], output_root=output["output_root"], vap_root=root["vap_root"])
+    return {"ok": True, "job": job, "request_path": request["request_path"], "output_root": output["output_root"], "vap_root": root["vap_root"]}
+
+
+def start_import_rerender_result_job(
+    status_path: str | Path | None = None,
+    output_root: str | Path | None = None,
+) -> dict:
+    output = validate_videoautopipeline_output_root(output_root, must_exist=True)
+    if not output["ok"]:
+        return {"ok": False, "error": output["error"], "output_root": output.get("output_root")}
+    status = _validate_vap_rerender_status_path(status_path, output["output_root"])
+    if not status["ok"]:
+        return {"ok": False, "error": status["error"], "status_path": status.get("status_path")}
+    job = start_job("import_rerender_result", input_file=status["status_path"], output_root=output["output_root"])
+    return {"ok": True, "job": job, "status_path": status["status_path"], "output_root": output["output_root"]}
+
+
+def start_process_completed_rerenders_job(
+    output_root: str | Path | None = None,
+    *,
+    dry_run: bool = True,
+    auto_fix: bool = True,
+    copy_results: bool = True,
+    stop_after_approved=None,
+) -> dict:
+    output = validate_videoautopipeline_output_root(output_root, must_exist=True)
+    if not output["ok"]:
+        return {"ok": False, "error": output["error"], "output_root": output.get("output_root")}
+    job = start_job(
+        "process_completed_rerenders",
+        output_root=output["output_root"],
+        dry_run=bool(dry_run),
+        auto_fix=bool(auto_fix),
+        copy_results=bool(copy_results),
+        send_telegram=False,
+        stop_after_approved=3 if stop_after_approved in (None, "") else stop_after_approved,
+    )
+    return {"ok": True, "job": job, "output_root": output["output_root"]}
+
+
+def start_repair_latest_rerender_request_job(
+    vap_root: str | Path | None = None,
+    output_root: str | Path | None = None,
+    *,
+    confirm_real_rerender: bool = False,
+) -> dict:
+    root = validate_videoautopipeline_root(vap_root)
+    if not root["ok"]:
+        return {"ok": False, "error": root["error"], "vap_root": root.get("vap_root")}
+    output = validate_videoautopipeline_output_root(output_root)
+    if not output["ok"]:
+        return {"ok": False, "error": output["error"], "output_root": output.get("output_root")}
+    request = _validate_rerender_request_path()
+    if not request["ok"]:
+        return {"ok": False, "error": request["error"], "request_path": request.get("request_path")}
+    job = start_job(
+        "repair_latest_rerender_request",
+        output_root=output["output_root"],
+        vap_root=root["vap_root"],
+        confirm_real_rerender=bool(confirm_real_rerender),
+    )
+    return {
+        "ok": True,
+        "job": job,
+        "request_path": request["request_path"],
+        "output_root": output["output_root"],
+        "vap_root": root["vap_root"],
+        "message": "Rerender repair loop started.",
+    }
+
+
 def start_process_waiting_for_plato_job(
     output_root: str | Path | None = None,
     *,
     dry_run: bool = True,
     auto_fix: bool = True,
     copy_results: bool = True,
+    stop_after_approved=None,
 ) -> dict:
-    return start_process_videoautopipeline_outputs_job(output_root, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results)
+    return start_process_videoautopipeline_outputs_job(
+        output_root,
+        dry_run=dry_run,
+        auto_fix=auto_fix,
+        copy_results=copy_results,
+        stop_after_approved=stop_after_approved,
+    )
 
 
 def start_send_approved_to_telegram_job(output_root: str | Path | None = None) -> dict:
@@ -496,6 +638,7 @@ def start_process_videoautopipeline_outputs_job(
     auto_fix: bool = True,
     copy_results: bool = True,
     send_telegram: bool = False,
+    stop_after_approved=None,
 ) -> dict:
     output = validate_videoautopipeline_output_root(output_root, must_exist=True)
     if not output["ok"]:
@@ -507,6 +650,7 @@ def start_process_videoautopipeline_outputs_job(
         auto_fix=bool(auto_fix),
         copy_results=bool(copy_results),
         send_telegram=bool(send_telegram),
+        stop_after_approved=3 if stop_after_approved in (None, "") else stop_after_approved,
     )
     return {"ok": True, "job": job, "output_root": output["output_root"]}
 
@@ -524,6 +668,11 @@ def start_full_videoautopipeline_flow_job(
     send_telegram: bool = False,
     davinci_mode: str = "required",
     cleanup_mode: str = "keep_all",
+    factory_preset: str = "quality",
+    max_candidates=None,
+    top_render_count=None,
+    stop_after_approved=None,
+    whisper_model: str = "medium",
 ) -> dict:
     root = validate_videoautopipeline_root(vap_root)
     if not root["ok"]:
@@ -553,6 +702,11 @@ def start_full_videoautopipeline_flow_job(
         vap_root=root["vap_root"],
         davinci_mode=davinci_mode if davinci_mode in {"required", "optional", "disabled"} else "required",
         cleanup_mode=cleanup_mode if cleanup_mode in {"keep_final_only", "keep_all", "dry_run"} else "keep_all",
+        factory_preset=factory_preset or "quality",
+        max_candidates=12 if max_candidates in (None, "") else max_candidates,
+        top_render_count=6 if top_render_count in (None, "") else top_render_count,
+        stop_after_approved=3 if stop_after_approved in (None, "") else stop_after_approved,
+        whisper_model=whisper_model or "medium",
     )
     return {"ok": True, "job": job, "vap_root": root["vap_root"], "output_root": output["output_root"], "warnings": folder.get("warnings", [])}
 
@@ -579,6 +733,7 @@ VAP_JOB_TYPES = {
     "vap_batch_dry_run",
     "vap_resume_failed",
     "vap_status",
+    "repair_latest_rerender_request",
 }
 
 
@@ -740,6 +895,7 @@ def control_room_status(
     delivery_path = Path(delivery_summary_path) if delivery_summary_path else default_delivery_root() / "delivery_summary.json"
     delivery_summary = _read_json_file(delivery_path)
     delivery = _delivery_row(delivery_summary)
+    delivery_explanation = explain_delivery_row(delivery, delivery_path)
     approved_output = str(delivery.get("approved_output_path") or "")
     final_reason = str(delivery.get("reason") or delivery.get("improvement_reason") or reason or "")
 
@@ -787,9 +943,17 @@ def control_room_status(
             "delivery_status": str(delivery.get("delivery_status") or ""),
             "telegram_status": str(delivery.get("telegram_status") or ""),
             "reason": final_reason,
+            "blocker_route": str(delivery.get("blocker_route") or ""),
+            "blocker_fix_attempted": bool(delivery.get("blocker_fix_attempted")),
+            "blocker_fix_accepted": bool(delivery.get("blocker_fix_accepted")),
+            "blocker_fixed_output_path": str(delivery.get("blocker_fixed_output_path") or ""),
+            "blocker_next_action": str(delivery.get("blocker_next_action") or ""),
             "message": "No approved output yet" if not approved_output else "",
             "delivery_summary_path": str(delivery_path) if delivery_path.exists() else "",
+            "explanation": delivery_explanation,
         },
+        "instagram_queue": {**instagram_queue_stats(), "latest_publish_result": latest_publish_result()},
+        "rerender_requests": get_rerender_stats(),
         "job_history": history,
     }
 
@@ -811,6 +975,11 @@ def _retry_base_from_latest_full() -> dict:
         "send_telegram": "--send-telegram" in args,
         "davinci_mode": _arg_value(args, "--davinci-mode") or "required",
         "cleanup_mode": _arg_value(args, "--cleanup-mode") or "keep_all",
+        "factory_preset": _arg_value(args, "--factory-preset") or "quality",
+        "max_candidates": _arg_value(args, "--max-candidates") or "12",
+        "top_render_count": _arg_value(args, "--top-render-count") or "6",
+        "stop_after_approved": _arg_value(args, "--stop-after-approved") or "3",
+        "whisper_model": _arg_value(args, "--whisper-model") or "medium",
     }
 
 
@@ -820,6 +989,11 @@ def _payload_text(data: dict, key: str, default: str = "") -> str:
 
 def _payload_bool(data: dict, key: str, default: bool) -> bool:
     return bool(data[key]) if key in data else default
+
+
+def _payload_value(data: dict, key: str, default):
+    value = data.get(key)
+    return default if value is None or value == "" else value
 
 
 def start_retry_full_pipeline_job(data: dict | None = None) -> dict:
@@ -839,6 +1013,11 @@ def start_retry_full_pipeline_job(data: dict | None = None) -> dict:
         send_telegram=_payload_bool(data, "send_telegram", base.get("send_telegram", False)),
         davinci_mode=_payload_text(data, "davinci_mode", base.get("davinci_mode", "required")) or "required",
         cleanup_mode=_payload_text(data, "cleanup_mode", base.get("cleanup_mode", "keep_all")) or "keep_all",
+        factory_preset=_payload_text(data, "factory_preset", base.get("factory_preset", "quality")) or "quality",
+        max_candidates=_payload_value(data, "max_candidates", base.get("max_candidates") or 12),
+        top_render_count=_payload_value(data, "top_render_count", base.get("top_render_count") or 6),
+        stop_after_approved=_payload_value(data, "stop_after_approved", base.get("stop_after_approved") or 3),
+        whisper_model=_payload_text(data, "whisper_model", base.get("whisper_model", "medium")) or "medium",
     )
 
 
@@ -849,6 +1028,7 @@ def start_retry_plato_only_job(data: dict | None = None) -> dict:
         dry_run=_payload_bool(data, "dry_run", True),
         auto_fix=_payload_bool(data, "auto_fix", True),
         copy_results=_payload_bool(data, "copy_results", True),
+        stop_after_approved=_payload_value(data, "stop_after_approved", 3),
     )
 
 
@@ -860,6 +1040,7 @@ def start_retry_delivery_only_job(data: dict | None = None) -> dict:
         auto_fix=_payload_bool(data, "auto_fix", True),
         copy_results=_payload_bool(data, "copy_results", True),
         send_telegram=_payload_bool(data, "send_telegram", False),
+        stop_after_approved=_payload_value(data, "stop_after_approved", 3),
     )
 
 
@@ -887,7 +1068,7 @@ def videoautopipeline_status(jobs: list[dict]) -> dict:
         "output_root": str(output_root),
         "latest_output_folder": _latest_output_folder(output_root),
         "waiting_for_plato_count": waiting_count,
-        "latest_videoautopipeline_job": _latest_job(jobs, {"open_videoautopipeline_gui", "run_videoautopipeline_worker", "run_videoautopipeline_batch", "run_full_videoautopipeline_to_plato_flow", "vap_generate_longvideos", "vap_generate_one_video", "vap_batch_generate_folder", "vap_batch_dry_run", "vap_resume_failed", "vap_status"}),
+        "latest_videoautopipeline_job": _latest_job(jobs, {"open_videoautopipeline_gui", "run_videoautopipeline_worker", "run_videoautopipeline_batch", "run_full_videoautopipeline_to_plato_flow", "vap_generate_longvideos", "vap_generate_one_video", "vap_batch_generate_folder", "vap_batch_dry_run", "vap_resume_failed", "vap_status", "repair_latest_rerender_request"}),
         "latest_plato_processing_job": _latest_job(jobs, {"process_videoautopipeline_outputs", "vap_delivery_scan", "vap_delivery_process", "vap_delivery_send"}),
         "last_delivery_summary_path": str(delivery_summary) if delivery_summary.exists() else "",
     }

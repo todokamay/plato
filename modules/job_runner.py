@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -16,6 +16,9 @@ from config import VIDEOAUTOPIPELINE_OUTPUT_ROOT, VIDEOAUTOPIPELINE_ROOT, projec
 JOB_STATUSES = {"queued", "running", "completed", "failed", "cancelled"}
 DEFAULT_JOB_FILE = project_path("data/jobs/jobs.json")
 TAIL_LIMIT = 8000
+FACTORY_PRESETS = {"quality", "balanced", "fast", "archive"}
+WHISPER_MODELS = {"small", "medium", "large-v3"}
+ALLOW_SAFE_PRESETS = {"balanced", "fast"}
 
 ACTION_DEFINITIONS = {
     "detect_outputs": {
@@ -113,6 +116,45 @@ ACTION_DEFINITIONS = {
         "requires_folder": True,
         "cancellable": False,
     },
+    "open_videoautopipeline_gui": {
+        "display": "py VIDEOAUTOPIPELINE_APP",
+        "args": [],
+        "cancellable": True,
+    },
+    "vap_generate_longvideos": {
+        "display": "py VIDEOAUTOPIPELINE_APP --batch LONGVIDEOS",
+        "args": [],
+        "requires_input_folder": True,
+        "cancellable": False,
+    },
+    "vap_generate_one_video": {
+        "display": "py VIDEOAUTOPIPELINE_APP --worker INPUT.mp4",
+        "args": [],
+        "requires_input_file": True,
+        "cancellable": False,
+    },
+    "vap_batch_generate_folder": {
+        "display": "py VIDEOAUTOPIPELINE_APP --batch INPUT_FOLDER",
+        "args": [],
+        "requires_input_folder": True,
+        "cancellable": False,
+    },
+    "vap_batch_dry_run": {
+        "display": "py VIDEOAUTOPIPELINE_APP --batch INPUT_FOLDER --dry-run",
+        "args": [],
+        "requires_input_folder": True,
+        "cancellable": False,
+    },
+    "vap_resume_failed": {
+        "display": "py VIDEOAUTOPIPELINE_APP INPUT --resume",
+        "args": [],
+        "cancellable": False,
+    },
+    "vap_status": {
+        "display": "py VIDEOAUTOPIPELINE_APP --worker INPUT.mp4 --status-only",
+        "args": [],
+        "cancellable": False,
+    },
     "run_videoautopipeline_worker": {
         "display": "py VIDEOAUTOPIPELINE_APP --worker INPUT.mp4",
         "args": [],
@@ -127,6 +169,28 @@ ACTION_DEFINITIONS = {
     },
     "process_videoautopipeline_outputs": {
         "display": r"py tools\process_videoautopipeline_outputs.py OUTPUT_ROOT --auto-fix --copy-results --dry-run",
+        "args": [],
+        "requires_output_root": True,
+        "cancellable": False,
+    },
+    "vap_dry_run_rerender_request": {
+        "display": r"py VIDEOAUTOPIPELINE_ROOT\tools\process_rerender_request.py REQUEST.json --dry-run --json",
+        "args": [],
+        "cancellable": False,
+    },
+    "import_rerender_result": {
+        "display": r"py tools\import_rerender_result.py STATUS.json",
+        "args": [],
+        "cancellable": False,
+    },
+    "process_completed_rerenders": {
+        "display": r"py tools\process_videoautopipeline_outputs.py OUTPUT_ROOT --include-rerenders --auto-fix --copy-results --dry-run",
+        "args": [],
+        "requires_output_root": True,
+        "cancellable": False,
+    },
+    "repair_latest_rerender_request": {
+        "display": r"py tools\run_rerender_repair_loop.py --vap-root VIDEOAUTOPIPELINE_ROOT --output-root OUTPUT_ROOT --json",
         "args": [],
         "requires_output_root": True,
         "cancellable": False,
@@ -245,15 +309,54 @@ def _add_process_flags(
         args.append("--send-telegram")
 
 
+def _positive_int(value, default: int = 0) -> int:
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _factory_preset(value: str | None) -> str:
+    preset = str(value or "quality").strip().lower()
+    return preset if preset in FACTORY_PRESETS else "quality"
+
+
+def _whisper_model(value: str | None) -> str:
+    model = str(value or "medium").strip().lower()
+    return model if model in WHISPER_MODELS else "medium"
+
+
 def _vap_env(
     *,
     vap_root: str | Path | None = None,
     output_root: str | Path | None = None,
+    davinci_mode: str = "required",
+    cleanup_mode: str = "keep_all",
+    factory_preset: str = "quality",
+    max_candidates: int | str | None = 12,
+    top_render_count: int | str | None = 6,
+    stop_after_approved: int | str | None = 3,
+    whisper_model: str = "medium",
 ) -> dict[str, str]:
     root, _, output = _vap_paths(vap_root, output_root)
+    mode = davinci_mode if davinci_mode in {"required", "optional", "disabled"} else "required"
+    preset = _factory_preset(factory_preset)
+    max_count = _positive_int(max_candidates, 12)
+    render_count = _positive_int(top_render_count, 6)
+    approved_count = _positive_int(stop_after_approved, 3)
+    whisper = _whisper_model(whisper_model)
     return {
         "SEND_MODE": "after_plato",
         "VAP_SEND_MODE": "after_plato",
+        "VAP_DAVINCI_MODE": mode,
+        "VAP_REQUIRE_DAVINCI": "true" if mode == "required" else "false",
+        "FACTORY_PRESET": preset,
+        "VAP_MAX_CANDIDATES": str(max_count),
+        "VAP_TOP_RENDER_COUNT": str(render_count),
+        "VAP_STOP_AFTER_APPROVED": str(approved_count),
+        "VAP_WHISPER_MODEL": whisper,
+        "VAP_ALLOW_SAFE_TO_TEST": "true" if preset in ALLOW_SAFE_PRESETS else "false",
+        "ALLOW_SAFE_TO_TEST": "true" if preset in ALLOW_SAFE_PRESETS else "false",
         "VAP_OUTPUT_DIR": str(output),
         "VIDEOAUTOPIPELINE_ROOT": str(root),
         "VIDEOAUTOPIPELINE_OUTPUT_ROOT": str(output),
@@ -275,28 +378,89 @@ def _command_for_action(
     copy_results: bool = True,
     send_telegram: bool = False,
     vap_root: str | None = None,
+    davinci_mode: str = "required",
+    cleanup_mode: str = "keep_all",
+    factory_preset: str = "quality",
+    max_candidates: int | str | None = 12,
+    top_render_count: int | str | None = 6,
+    stop_after_approved: int | str | None = 3,
+    whisper_model: str = "medium",
+    confirm_real_rerender: bool = False,
 ) -> tuple[list[str], str]:
     definition = ACTION_DEFINITIONS.get(action)
     if not definition:
         raise ValueError(f"Unsupported operator action: {action}")
     root, app_path, output = _vap_paths(vap_root, output_root)
-    if action == "run_videoautopipeline_worker":
+    if action == "open_videoautopipeline_gui":
+        return [sys.executable, str(app_path)], f"py {app_path}"
+    if action in {"run_videoautopipeline_worker", "vap_generate_one_video"}:
         if not input_file:
             raise ValueError("An input MP4 is required for this action.")
         args = [sys.executable, str(app_path), "--worker", input_file]
         return args, f'py {app_path} --worker "{input_file}"'
-    if action == "run_videoautopipeline_batch":
+    if action in {"run_videoautopipeline_batch", "vap_generate_longvideos", "vap_batch_generate_folder", "vap_batch_dry_run"}:
         if not input_folder:
             raise ValueError("An input folder is required for this action.")
-        args = [sys.executable, str(app_path), "--batch", input_folder]
-        display = f'py {app_path} --batch "{input_folder}"'
+        args = [sys.executable, str(app_path), "--batch", input_folder, "--output-root", str(output)]
+        display = f'py {app_path} --batch "{input_folder}" --output-root "{output}"'
         if limit:
             args.extend(["--limit", str(limit)])
             display += f" --limit {limit}"
+        if action == "vap_batch_dry_run":
+            args.extend(["--dry-run", "--json"])
+            display += " --dry-run --json"
         return args, display
+    if action == "vap_resume_failed":
+        if input_file:
+            args = [sys.executable, str(app_path), "--worker", input_file, "--resume"]
+            return args, f'py {app_path} --worker "{input_file}" --resume'
+        if input_folder:
+            args = [sys.executable, str(app_path), "--batch", input_folder, "--output-root", str(output), "--resume"]
+            display = f'py {app_path} --batch "{input_folder}" --output-root "{output}" --resume'
+            if limit:
+                args.extend(["--limit", str(limit)])
+                display += f" --limit {limit}"
+            return args, display
+        raise ValueError("An input MP4 or input folder is required for this action.")
+    if action == "vap_status":
+        if not input_file:
+            raise ValueError("An input MP4 is required for worker status.")
+        args = [sys.executable, str(app_path), "--worker", input_file, "--status-only"]
+        return args, f'py {app_path} --worker "{input_file}" --status-only'
     if action == "process_videoautopipeline_outputs":
         args = [sys.executable, "tools/process_videoautopipeline_outputs.py", str(output)]
+        if _positive_int(stop_after_approved, 3):
+            args.extend(["--stop-after-approved", str(_positive_int(stop_after_approved, 3))])
         _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=send_telegram)
+        return args, "py " + " ".join(args[1:])
+    if action == "vap_dry_run_rerender_request":
+        if not input_file:
+            raise ValueError("A rerender request JSON path is required.")
+        args = [sys.executable, str(root / "tools" / "process_rerender_request.py"), input_file, "--dry-run", "--json", "--output-root", str(output)]
+        return args, f'py {root / "tools" / "process_rerender_request.py"} "{input_file}" --dry-run --json --output-root "{output}"'
+    if action == "import_rerender_result":
+        if not input_file:
+            raise ValueError("A rerender status JSON path is required.")
+        args = [sys.executable, "tools/import_rerender_result.py", input_file]
+        return args, f'py tools/import_rerender_result.py "{input_file}"'
+    if action == "process_completed_rerenders":
+        args = [sys.executable, "tools/process_videoautopipeline_outputs.py", str(output), "--include-rerenders"]
+        if _positive_int(stop_after_approved, 3):
+            args.extend(["--stop-after-approved", str(_positive_int(stop_after_approved, 3))])
+        _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=False)
+        return args, "py " + " ".join(args[1:])
+    if action == "repair_latest_rerender_request":
+        args = [
+            sys.executable,
+            "tools/run_rerender_repair_loop.py",
+            "--vap-root",
+            str(root),
+            "--output-root",
+            str(output),
+            "--json",
+        ]
+        if confirm_real_rerender:
+            args.append("--confirm-real-rerender")
         return args, "py " + " ".join(args[1:])
     if action == "run_full_videoautopipeline_to_plato_flow":
         if not input_file and not input_folder:
@@ -315,6 +479,12 @@ def _command_for_action(
             args.extend(["--input-folder", input_folder])
         if limit:
             args.extend(["--limit", str(limit)])
+        args.extend(["--davinci-mode", davinci_mode if davinci_mode in {"required", "optional", "disabled"} else "required"])
+        args.extend(["--factory-preset", _factory_preset(factory_preset)])
+        args.extend(["--max-candidates", str(_positive_int(max_candidates, 12))])
+        args.extend(["--top-render-count", str(_positive_int(top_render_count, 6))])
+        args.extend(["--stop-after-approved", str(_positive_int(stop_after_approved, 3))])
+        args.extend(["--whisper-model", _whisper_model(whisper_model)])
         _add_process_flags(args, dry_run=dry_run, auto_fix=auto_fix, copy_results=copy_results, send_telegram=send_telegram)
         return args, "py " + " ".join(args[1:])
     if definition.get("requires_folder") and not folder:
@@ -510,6 +680,14 @@ def start_job(
     copy_results: bool = True,
     send_telegram: bool = False,
     vap_root: str | None = None,
+    davinci_mode: str = "required",
+    cleanup_mode: str = "keep_all",
+    factory_preset: str = "quality",
+    max_candidates: int | str | None = 12,
+    top_render_count: int | str | None = 6,
+    stop_after_approved: int | str | None = 3,
+    whisper_model: str = "medium",
+    confirm_real_rerender: bool = False,
     job_file: str | Path = DEFAULT_JOB_FILE,
 ) -> dict:
     definition = ACTION_DEFINITIONS.get(action)
@@ -529,13 +707,30 @@ def start_job(
         copy_results=copy_results,
         send_telegram=send_telegram,
         vap_root=vap_root,
+        davinci_mode=davinci_mode,
+        cleanup_mode=cleanup_mode,
+        factory_preset=factory_preset,
+        max_candidates=max_candidates,
+        top_render_count=top_render_count,
+        stop_after_approved=stop_after_approved,
+        whisper_model=whisper_model,
+        confirm_real_rerender=confirm_real_rerender,
     )
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
-    if action.startswith("run_videoautopipeline") or action == "process_videoautopipeline_outputs":
-        env.update(_vap_env(vap_root=vap_root, output_root=output_root))
+    if action.startswith("run_videoautopipeline") or action.startswith("vap_") or action in {"process_videoautopipeline_outputs", "repair_latest_rerender_request"}:
+        env.update(_vap_env(
+            vap_root=vap_root,
+            output_root=output_root,
+            davinci_mode=davinci_mode,
+            factory_preset=factory_preset,
+            max_candidates=max_candidates,
+            top_render_count=top_render_count,
+            stop_after_approved=stop_after_approved,
+            whisper_model=whisper_model,
+        ))
     with _LOCK:
         state = load_jobs(job_file)
         if definition.get("singleton") and _running_watch_job(state):

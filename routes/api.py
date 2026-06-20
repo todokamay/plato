@@ -4,6 +4,8 @@ from fastapi import APIRouter, Request
 
 from modules.health_engine import system_health
 from modules.history_engine import history_entries, history_summary
+from modules.instagram_queue import get_stats as instagram_queue_stats, load_queue as load_instagram_queue
+from modules.instagram_publisher import get_next_queue_item, publish_one_dry_run
 from modules.job_runner import get_job, list_jobs
 from modules.operator_actions import (
     control_room_status,
@@ -15,6 +17,7 @@ from modules.operator_actions import (
     start_dry_run_job,
     start_production_diagnostics_job,
     start_replace_rollback_job,
+    start_import_rerender_result_job,
     start_full_videoautopipeline_flow_job,
     start_open_videoautopipeline_gui_job,
     start_process_videoautopipeline_outputs_job,
@@ -24,6 +27,7 @@ from modules.operator_actions import (
     start_retry_plato_only_job,
     start_send_approved_to_telegram_job,
     start_vap_batch_dry_run_job,
+    start_vap_dry_run_rerender_request_job,
     start_vap_delivery_process_job,
     start_vap_delivery_scan_job,
     start_vap_delivery_send_job,
@@ -34,6 +38,8 @@ from modules.operator_actions import (
     start_vap_status_job,
     start_videoautopipeline_batch_job,
     start_videoautopipeline_worker_job,
+    start_process_completed_rerenders_job,
+    start_repair_latest_rerender_request_job,
     start_watch_job,
     stop_watch_job,
     vap_show_output_root,
@@ -41,7 +47,10 @@ from modules.operator_actions import (
 from modules.orchestrator import orchestrator_status
 from modules.production_diagnostics import production_diagnostics_snapshot
 from modules.queue_engine import queue_stats
+from modules.rerender_requests import get_rerender_stats
 from modules.report_center import report_payload
+from modules.videoautopipeline_contract import default_delivery_root
+from tools.build_instagram_queue import build_from_delivery
 
 
 router = APIRouter(prefix="/api")
@@ -113,7 +122,93 @@ def api_operator_status():
 
 @router.get("/operator/control-room-status")
 def api_operator_control_room_status():
-    return _safe_payload(control_room_status, {"ok": False, "status_bar": {}, "current_run": {}, "final_output": {}, "job_history": []})
+    return _safe_payload(control_room_status, {"ok": False, "status_bar": {}, "current_run": {}, "final_output": {}, "instagram_queue": {}, "job_history": []})
+
+
+@router.get("/operator/instagram-queue")
+def api_operator_instagram_queue():
+    return _safe_payload(lambda: {"ok": True, **instagram_queue_stats()}, {"ok": False, "total": 0, "counts": {}, "items": []})
+
+
+@router.get("/operator/rerender-requests")
+def api_operator_rerender_requests():
+    return _safe_payload(lambda: {"ok": True, **get_rerender_stats()}, {"ok": False, "total": 0, "counts": {}, "items": []})
+
+
+@router.post("/operator/build-instagram-queue")
+async def api_operator_build_instagram_queue(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: {"ok": True, **build_from_delivery(default_delivery_root() / "delivery_summary.json", dry_run=_bool_from_body(data, "dry_run", False), force=_bool_from_body(data, "force", False))},
+        {"ok": False, "queued": 0, "skipped": 0, "reasons": []},
+    )
+
+
+@router.post("/operator/vap-dry-run-rerender-request")
+async def api_operator_vap_dry_run_rerender_request(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_vap_dry_run_rerender_request_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "request_path"),
+            _text_from_body(data, "output_root"),
+        ),
+        {"ok": False, "error": "Could not dry-run rerender request."},
+    )
+
+
+@router.post("/operator/import-rerender-result")
+async def api_operator_import_rerender_result(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_import_rerender_result_job(
+            _text_from_body(data, "status_path"),
+            _text_from_body(data, "output_root"),
+        ),
+        {"ok": False, "error": "Could not import rerender result."},
+    )
+
+
+@router.post("/operator/process-completed-rerenders")
+async def api_operator_process_completed_rerenders(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_process_completed_rerenders_job(
+            _text_from_body(data, "output_root"),
+            dry_run=_bool_from_body(data, "dry_run", True),
+            auto_fix=_bool_from_body(data, "auto_fix", True),
+            copy_results=_bool_from_body(data, "copy_results", True),
+            stop_after_approved=data.get("stop_after_approved"),
+        ),
+        {"ok": False, "error": "Could not process completed rerenders."},
+    )
+
+
+@router.post("/operator/fix-latest-rerender-request")
+async def api_operator_fix_latest_rerender_request(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: start_repair_latest_rerender_request_job(
+            _text_from_body(data, "vap_root"),
+            _text_from_body(data, "output_root"),
+            confirm_real_rerender=_bool_from_body(data, "confirm_real_rerender", False),
+        ),
+        {"ok": False, "error": "Could not start rerender repair loop."},
+    )
+
+
+@router.get("/operator/instagram-queue-next")
+def api_operator_instagram_queue_next():
+    return _safe_payload(lambda: {"ok": True, "item": get_next_queue_item(load_instagram_queue())}, {"ok": False, "item": None})
+
+
+@router.post("/operator/instagram-publish-next-dry-run")
+async def api_operator_instagram_publish_next_dry_run(request: Request):
+    data = await _json_body(request)
+    return _safe_payload(
+        lambda: publish_one_dry_run(allow_safe_to_test=_bool_from_body(data, "allow_safe_to_test", False)),
+        {"ok": False, "dry_run": True, "published": False, "status": "failed"},
+    )
 
 
 @router.post("/operator/detect")
@@ -299,6 +394,7 @@ async def api_operator_process_videoautopipeline_outputs(request: Request):
             auto_fix=_bool_from_body(data, "auto_fix", True),
             copy_results=_bool_from_body(data, "copy_results", True),
             send_telegram=_bool_from_body(data, "send_telegram", False),
+            stop_after_approved=data.get("stop_after_approved"),
         ),
         {"ok": False, "error": "Could not process VideoAutoPipeline outputs."},
     )
@@ -313,6 +409,7 @@ async def api_operator_process_waiting_for_plato(request: Request):
             dry_run=_bool_from_body(data, "dry_run", True),
             auto_fix=_bool_from_body(data, "auto_fix", True),
             copy_results=_bool_from_body(data, "copy_results", True),
+            stop_after_approved=data.get("stop_after_approved"),
         ),
         {"ok": False, "error": "Could not process waiting VideoAutoPipeline jobs."},
     )
@@ -343,6 +440,11 @@ async def api_operator_full_videoautopipeline_flow(request: Request):
             send_telegram=_bool_from_body(data, "send_telegram", False),
             davinci_mode=_text_from_body(data, "davinci_mode") or "required",
             cleanup_mode=_text_from_body(data, "cleanup_mode") or "keep_all",
+            factory_preset=_text_from_body(data, "factory_preset") or "quality",
+            max_candidates=data.get("max_candidates"),
+            top_render_count=data.get("top_render_count"),
+            stop_after_approved=data.get("stop_after_approved"),
+            whisper_model=_text_from_body(data, "whisper_model") or "medium",
         ),
         {"ok": False, "error": "Could not run full VideoAutoPipeline to Plato flow."},
     )

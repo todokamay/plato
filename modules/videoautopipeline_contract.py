@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from config import project_path
@@ -26,6 +27,30 @@ def _already_delivered(delivery_root: Path, job_id: str) -> bool:
     return str(data.get("delivery_status") or "").lower() in {"sent", "delivered"}
 
 
+def _final_rank_key(path: Path) -> tuple:
+    stem = path.stem.lower()
+    rank_match = re.search(r"_rank_(\d+)", stem)
+    score_match = re.search(r"_score_([0-9]+(?:_[0-9]+)?)", stem)
+    rank = int(rank_match.group(1)) if rank_match else 999999
+    score = -float(score_match.group(1).replace("_", ".")) if score_match else 0.0
+    return rank, score, path.name.lower()
+
+
+def _preferred_final(job_dir: Path, status: dict) -> Path | None:
+    finals = [path for path in (job_dir / "final").glob("*.mp4") if path.is_file()]
+    davinci_required = str(status.get("davinci_mode") or "").lower() == "required"
+    if davinci_required:
+        davinci_finals = [path for path in finals if "_davinci" in path.stem.lower()]
+        if davinci_finals:
+            return sorted(davinci_finals, key=_final_rank_key)[0]
+    candidates = []
+    plato_input = status.get("plato_input_path")
+    if plato_input:
+        candidates.append(Path(plato_input))
+    candidates.extend(sorted(finals, key=_final_rank_key))
+    return next((path for path in candidates if path.exists() and path.is_file() and path.suffix.lower() == ".mp4"), None)
+
+
 def find_waiting_jobs(output_root: str | Path, *, delivery_root: str | Path | None = None, limit: int | None = None) -> list[dict]:
     root = Path(output_root)
     if not root.exists():
@@ -47,13 +72,10 @@ def find_waiting_jobs(output_root: str | Path, *, delivery_root: str | Path | No
             continue
         if str(status.get("delivery_status") or "").lower() in {"sent", "delivered"}:
             continue
-        candidates = []
-        plato_input = status.get("plato_input_path")
-        if plato_input:
-            candidates.append(Path(plato_input))
-        candidates.extend(sorted((job_dir / "final").glob("*.mp4")))
-        final_path = next((path for path in candidates if path.exists() and path.is_file() and path.suffix.lower() == ".mp4"), None)
+        final_path = _preferred_final(job_dir, status)
         if not final_path:
+            continue
+        if str(status.get("davinci_mode") or "").lower() == "required" and not status.get("davinci_succeeded"):
             continue
         jobs.append({
             "job_id": job_id,

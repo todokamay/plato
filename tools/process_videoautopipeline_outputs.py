@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from modules.auto_qc import run_auto_qc_fix
+from modules.blocker_router import classify_blockers
+from modules.rerender_requests import build_rerender_request, list_rerender_requests, write_rerender_request
 from modules.telegram_delivery import send_video
 from modules.verdict_resolver import normalize_verdict, verdict_from_score
 from modules.videoautopipeline_contract import default_delivery_root, find_waiting_jobs
@@ -41,6 +43,13 @@ FIELDS = [
     "telegram_status",
     "sent",
     "reason",
+    "blocker_route",
+    "blocker_fix_attempted",
+    "blocker_fix_accepted",
+    "blocker_fixed_output_path",
+    "blocker_next_action",
+    "rerender_request_path",
+    "rerender_request_status",
     "metadata_path",
     "status_path",
 ]
@@ -56,6 +65,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--send-telegram", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--stop-after-approved", type=int)
+    parser.add_argument("--include-rerenders", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -150,8 +161,8 @@ def _approved_output(row: dict, original: str, *, improvement_enabled: bool = Tr
     return (approved, f"original is {verdict} and no critical issues") if _existing_mp4(approved) else ("", "approved original output is missing")
 
 
-def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dict:
-    row = {
+def _base_row(job: dict, args: argparse.Namespace) -> dict:
+    return {
         "job_id": job["job_id"],
         "source_final_path": job["final_path"],
         "approved_output_path": "",
@@ -171,9 +182,114 @@ def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dic
         "telegram_status": "skipped",
         "sent": False,
         "reason": "",
+        "blocker_route": "",
+        "blocker_fix_attempted": False,
+        "blocker_fix_accepted": False,
+        "blocker_fixed_output_path": "",
+        "blocker_next_action": "",
+        "rerender_request_path": job.get("rerender_request_path", ""),
+        "rerender_request_status": job.get("rerender_request_status", ""),
         "metadata_path": job.get("metadata_path", ""),
         "status_path": job.get("status_path", ""),
     }
+
+
+def skipped_after_approved_limit_row(job: dict, args: argparse.Namespace) -> dict:
+    row = _base_row(job, args)
+    row.update({
+        "delivery_status": "skipped_after_approved_limit",
+        "plato_status": "skipped_after_approved_limit",
+        "improvement_status": "skipped",
+        "reanalysis_status": "skipped",
+        "reason": "skipped_after_approved_limit",
+    })
+    return row
+
+
+def _copy_clip_result(row: dict, clip: dict) -> None:
+    row.update({
+        "improvement_attempted": bool(clip.get("auto_fix_attempted")),
+        "improvement_accepted": bool(clip.get("fix_accepted")) and _existing_mp4(clip.get("fixed_path", "")),
+        "fixed_output_path": clip.get("fixed_path", ""),
+        "reanalysis_score": clip.get("fixed_adjusted_score", ""),
+        "reanalysis_verdict": clip.get("fixed_final_verdict", ""),
+    })
+    if row["improvement_accepted"]:
+        row["improvement_status"] = "accepted"
+        row["reanalysis_status"] = "succeeded"
+    elif row["improvement_attempted"]:
+        row["improvement_status"] = "rejected"
+        row["reanalysis_status"] = "succeeded" if row["reanalysis_verdict"] else "failed"
+    else:
+        row["improvement_status"] = "skipped"
+        row["reanalysis_status"] = "skipped"
+    row["improvement_reason"] = clip.get("fix_acceptance_reason") or clip.get("fix_rejection_reason") or clip.get("failure_reason") or row.get("reason", "")
+
+
+def _apply_approval(row: dict, clip: dict, original: str) -> None:
+    approved, reason = _approved_output(clip, original)
+    row["approved_output_path"] = approved
+    row["plato_status"] = "approved" if approved else "rejected"
+    row["reason"] = reason
+    row["delivery_status"] = "approved" if approved else "not_sent"
+
+
+def _route_blocked_delivery(row: dict, clip: dict, job: dict, args: argparse.Namespace, delivery_root: Path) -> None:
+    if row.get("approved_output_path") or row.get("delivery_status") == "dry_run":
+        return
+    route = classify_blockers(clip, row)
+    row["blocker_route"] = route["route"]
+    row["blocker_next_action"] = route["reason"]
+
+    if route["route"] == "vap_rerender":
+        row["delivery_status"] = "needs_rerender"
+        request = build_rerender_request({**row, "status": job.get("status") or {}}, route)
+        result = write_rerender_request(request)
+        row["rerender_request_path"] = result.get("path") or ""
+        row["rerender_request_status"] = (result.get("request") or {}).get("status") or ("requested" if result.get("ok") else "skipped")
+        row["blocker_next_action"] = f"{route['reason']}. Rerender in VideoAutoPipeline, then rerun Plato QC."
+        return
+    if route["route"] != "plato_fix":
+        row["blocker_next_action"] = f"{route['reason']} Manual review required before delivery."
+        return
+    if row.get("improvement_attempted"):
+        row["blocker_fix_attempted"] = True
+        row["blocker_fix_accepted"] = bool(row.get("improvement_accepted"))
+        row["blocker_fixed_output_path"] = row.get("fixed_output_path", "")
+        row["blocker_next_action"] = "Plato fix already ran; manual review required." if not row.get("improvement_accepted") else "Plato fix was accepted."
+        return
+    if not args.auto_fix:
+        row["blocker_next_action"] = "Plato fix is available; rerun with --auto-fix to attempt it."
+        return
+
+    row["blocker_fix_attempted"] = True
+    try:
+        payload = run_auto_qc_fix(
+            Path(job["final_path"]).parent,
+            auto_fix=True,
+            copy_results=args.copy_results,
+            output_dir=delivery_root / "qc_runs" / job["job_id"] / "blocker_fix",
+            limit=1,
+            target_file=job["final_path"],
+            allow_original_short=True,
+            short_clip_min_duration=5,
+            replace_with_fixed=args.replace_with_fixed,
+            confirm_replace=args.confirm_replace,
+            force_auto_fix=True,
+        )
+        fixed_clip = _row_for_clip(payload, job["final_path"])
+        _copy_clip_result(row, fixed_clip)
+        _apply_approval(row, fixed_clip, job["final_path"])
+        row["blocker_fix_accepted"] = bool(row.get("approved_output_path")) and bool(row.get("improvement_accepted"))
+        row["blocker_fixed_output_path"] = row.get("fixed_output_path", "")
+        row["blocker_next_action"] = "Plato fix accepted; final output is approved." if row["blocker_fix_accepted"] else "Plato fix failed or remained blocked; manual review required."
+    except Exception as exc:
+        row["blocker_next_action"] = "Plato fix failed; manual review required."
+        row["reason"] = str(exc)
+
+
+def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dict:
+    row = _base_row(job, args)
     if args.dry_run:
         row["reason"] = "dry run"
         row["plato_status"] = "skipped"
@@ -188,6 +304,7 @@ def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dic
             copy_results=args.copy_results,
             output_dir=delivery_root / "qc_runs" / job["job_id"],
             limit=1,
+            target_file=job["final_path"],
             allow_original_short=True,
             short_clip_min_duration=5,
             replace_with_fixed=args.replace_with_fixed,
@@ -198,27 +315,11 @@ def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dic
             "plato_score": clip.get("original_adjusted_score", ""),
             "plato_verdict": clip.get("original_final_verdict", ""),
             "plato_bucket": clip.get("original_bucket", ""),
-            "improvement_attempted": bool(clip.get("auto_fix_attempted")),
-            "improvement_accepted": bool(clip.get("fix_accepted")) and _existing_mp4(clip.get("fixed_path", "")),
-            "fixed_output_path": clip.get("fixed_path", ""),
-            "reanalysis_score": clip.get("fixed_adjusted_score", ""),
-            "reanalysis_verdict": clip.get("fixed_final_verdict", ""),
         })
-        if row["improvement_accepted"]:
-            row["improvement_status"] = "accepted"
-            row["reanalysis_status"] = "succeeded"
-        elif row["improvement_attempted"]:
-            row["improvement_status"] = "rejected"
-            row["reanalysis_status"] = "succeeded" if row["reanalysis_verdict"] else "failed"
-        else:
-            row["improvement_status"] = "skipped"
-            row["reanalysis_status"] = "skipped"
-        approved, reason = _approved_output(clip, job["final_path"], improvement_enabled=args.auto_fix)
-        row["improvement_reason"] = clip.get("fix_acceptance_reason") or clip.get("fix_rejection_reason") or clip.get("failure_reason") or reason
-        row["approved_output_path"] = approved
-        row["plato_status"] = "approved" if approved else "rejected"
-        row["reason"] = reason
-        row["delivery_status"] = "approved" if approved else "not_sent"
+        _copy_clip_result(row, clip)
+        _apply_approval(row, clip, job["final_path"])
+        _route_blocked_delivery(row, clip, job, args, delivery_root)
+        approved = row.get("approved_output_path")
         if approved and args.send_telegram:
             sent = send_video(approved, f"Plato approved: {Path(approved).name}")
             if sent.get("ok"):
@@ -237,15 +338,53 @@ def process_job(job: dict, args: argparse.Namespace, delivery_root: Path) -> dic
     return row
 
 
+def completed_rerender_jobs(limit: int | None = None) -> list[dict]:
+    jobs = []
+    for request in list_rerender_requests("completed"):
+        output = Path(str(request.get("rerendered_output_path") or ""))
+        if not output.exists() or not output.is_file() or output.suffix.lower() != ".mp4":
+            continue
+        jobs.append({
+            "job_id": str(request.get("request_id") or request.get("job_id") or output.stem),
+            "final_path": str(output.resolve()),
+            "metadata_path": "",
+            "status_path": str(request.get("rerender_status_path") or request.get("path") or ""),
+            "status": {"status": "succeeded_waiting_for_plato", "send_mode": "after_plato", "plato_required": True},
+            "rerender_request_path": str(request.get("path") or ""),
+            "rerender_request_status": "completed",
+        })
+        if limit and len(jobs) >= limit:
+            break
+    return jobs
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     delivery_root = Path(os.environ.get("PLATO_VAP_DELIVERY_ROOT") or default_delivery_root())
     jobs = find_waiting_jobs(args.output_root, delivery_root=delivery_root, limit=args.limit)
-    rows = [process_job(job, args, delivery_root) for job in jobs]
+    if args.include_rerenders:
+        remaining = None if args.limit is None else max(0, args.limit - len(jobs))
+        if remaining is None or remaining > 0:
+            jobs.extend(completed_rerender_jobs(remaining))
+    stop_after = args.stop_after_approved
+    if stop_after is None:
+        stop_after = _as_int(os.environ.get("VAP_STOP_AFTER_APPROVED") or os.environ.get("FACTORY_STOP_AFTER_APPROVED") or 3)
+    stop_after = max(0, _as_int(stop_after))
+    rows = []
+    approved_count = 0
+    for job in jobs:
+        if stop_after and approved_count >= stop_after:
+            rows.append(skipped_after_approved_limit_row(job, args))
+            continue
+        row = process_job(job, args, delivery_root)
+        rows.append(row)
+        if row.get("plato_status") == "approved":
+            approved_count += 1
     payload = {
         "created_at": utc_now(),
         "output_root": str(Path(args.output_root).resolve()),
         "dry_run": bool(args.dry_run),
+        "stop_after_approved": stop_after,
         "count": len(rows),
         "sent_count": sum(1 for row in rows if row["telegram_status"] == "sent"),
         "approved_count": sum(1 for row in rows if row["plato_status"] == "approved"),

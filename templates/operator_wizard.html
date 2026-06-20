@@ -26,7 +26,37 @@
       <label for="vap-limit-input">Limit</label>
       <input id="vap-limit-input" type="number" min="1" step="1" placeholder="3">
     </div>
+    <div>
+      <label for="vap-factory-preset">Factory Preset</label>
+      <select id="vap-factory-preset">
+        <option value="quality" selected>Quality</option>
+        <option value="balanced">Balanced</option>
+        <option value="fast">Fast</option>
+        <option value="archive">Archive</option>
+      </select>
+    </div>
+    <div>
+      <label for="vap-max-candidates">Max candidates</label>
+      <input id="vap-max-candidates" type="number" min="0" step="1" value="12">
+    </div>
+    <div>
+      <label for="vap-top-render-count">Render top N</label>
+      <input id="vap-top-render-count" type="number" min="0" step="1" value="6">
+    </div>
+    <div>
+      <label for="vap-stop-after-approved">Stop after approved</label>
+      <input id="vap-stop-after-approved" type="number" min="0" step="1" value="3">
+    </div>
+    <div>
+      <label for="vap-whisper-model">Whisper model</label>
+      <select id="vap-whisper-model">
+        <option value="small">small</option>
+        <option value="medium" selected>medium</option>
+        <option value="large-v3">large-v3</option>
+      </select>
+    </div>
   </div>
+  <p id="vap-factory-estimate" class="muted">Will render up to 6 candidates, stop after 3 approved.</p>
   <div class="action-row">
     <label class="check-row"><input id="vap-dry-run" type="checkbox" checked> Dry-run</label>
     <label class="check-row"><input id="vap-send-telegram" type="checkbox"> Send Telegram after Plato approval</label>
@@ -68,7 +98,7 @@
   </article>
 
   <article class="panel">
-    <div class="section-title"><h2>Final Output</h2></div>
+    <div class="section-title"><h2>Final Decision</h2><span class="muted">Final Output</span></div>
     <p id="cr-final-message" class="muted">No approved output yet.</p>
     <dl class="meta">
       <dt>Approved output</dt><dd id="cr-approved-output" class="path-text">-</dd>
@@ -80,11 +110,68 @@
       <dt>Telegram</dt><dd id="cr-final-telegram">-</dd>
       <dt>Reason</dt><dd id="cr-final-reason" class="path-text">-</dd>
     </dl>
+    <div class="section-title"><h2>Blockers</h2></div>
+    <dl class="meta">
+      <dt>Critical blockers</dt><dd id="cr-critical-blockers">0</dd>
+      <dt>P0 blockers</dt><dd id="cr-p0-blockers">0</dd>
+      <dt>P1 blockers</dt><dd id="cr-p1-blockers">0</dd>
+      <dt>Blocker Route</dt><dd id="cr-blocker-route">-</dd>
+      <dt>Reason</dt><dd id="cr-blocker-reason" class="path-text">-</dd>
+      <dt>Source field</dt><dd id="cr-blocker-source" class="path-text">-</dd>
+    </dl>
+    <ul id="cr-blocker-items" class="muted"></ul>
+    <div class="section-title"><h2>Fix Recommendation</h2></div>
+    <dl class="meta">
+      <dt>Can auto-fix</dt><dd id="cr-can-auto-fix">-</dd>
+      <dt>Fix Result</dt><dd id="cr-fix-result">-</dd>
+      <dt>Fix attempted</dt><dd id="cr-fix-attempted">-</dd>
+      <dt>Fix accepted</dt><dd id="cr-fix-accepted">-</dd>
+      <dt>Fixed output</dt><dd id="cr-blocker-fixed-output" class="path-text">-</dd>
+      <dt>Suggested next action</dt><dd id="cr-next-action" class="path-text">-</dd>
+    </dl>
     <div class="action-row">
       <button id="open-final-folder" type="button">Open final folder</button>
       <button id="copy-final-path" type="button">Copy final path</button>
       <button id="open-delivery-summary" type="button">Open delivery summary</button>
     </div>
+  </article>
+
+  <article class="panel">
+    <div class="section-title"><h2>Instagram Queue</h2><a href="/api/operator/instagram-queue">JSON</a></div>
+    <dl class="meta">
+      <dt>Queued</dt><dd id="cr-queue-queued">0</dd>
+      <dt>Posted dry-run</dt><dd id="cr-queue-posted-dry-run">0</dd>
+      <dt>Failed</dt><dd id="cr-queue-failed">0</dd>
+      <dt>Posted</dt><dd id="cr-queue-posted">0</dd>
+      <dt>Latest</dt><dd id="cr-queue-latest" class="path-text">-</dd>
+      <dt>Latest result</dt><dd id="cr-queue-latest-result" class="path-text">-</dd>
+    </dl>
+    <div class="action-row">
+      <button id="build-instagram-queue" type="button">Build Queue</button>
+      <button id="publish-instagram-dry-run" type="button">Publish Next Dry Run</button>
+      <button id="peek-instagram-queue" type="button">Peek Next Queue Item</button>
+    </div>
+    <p class="muted">Approved outputs only. No publishing in this phase.</p>
+  </article>
+
+  <article class="panel">
+    <div class="section-title"><h2>Rerender Requests</h2><a href="/api/operator/rerender-requests">JSON</a></div>
+    <dl class="meta">
+      <dt>Requested</dt><dd id="cr-rerender-requested">0</dd>
+      <dt>Completed</dt><dd id="cr-rerender-completed">0</dd>
+      <dt>Failed</dt><dd id="cr-rerender-failed">0</dd>
+      <dt>Latest request</dt><dd id="cr-rerender-latest" class="path-text">-</dd>
+      <dt>Latest blocker</dt><dd id="cr-rerender-blocker">-</dd>
+      <dt>Requested changes</dt><dd id="cr-rerender-changes" class="path-text">-</dd>
+      <dt>Latest rerender output</dt><dd id="cr-rerender-output" class="path-text">-</dd>
+    </dl>
+    <div class="action-row">
+      <button id="fix-latest-rerender-request" type="button">Fix Latest Rerender Request</button>
+      <button id="vap-dry-run-rerender-request" type="button">Dry-run Latest Rerender Request</button>
+      <button id="import-rerender-result" type="button">Import Rerender Result</button>
+      <button id="process-completed-rerenders" type="button">Process Completed Rerenders With Plato</button>
+    </div>
+    <p class="muted">One-shot actions only. No continuous rerender automation yet.</p>
   </article>
 </section>
 
@@ -214,6 +301,7 @@
     <label class="check-row"><input id="vap-force-reject-improvement-unavailable" type="checkbox" checked> Force reject if Plato improvement unavailable</label>
     <label class="check-row"><input id="vap-keep-final-only" type="checkbox"> Keep only final approved video after successful delivery</label>
     <label class="check-row"><input id="vap-cleanup-dry-run" type="checkbox" checked> Cleanup dry-run</label>
+    <label class="check-row"><input id="vap-confirm-real-rerender" type="checkbox"> Confirm real rerender</label>
     <details>
       <summary>Cleanup danger zone</summary>
       <label class="check-row"><input id="vap-allow-source-delete" type="checkbox"> Allow source delete</label>
@@ -327,6 +415,12 @@ const vapOutputRootInput = document.getElementById("vap-output-root-input");
 const vapInputVideo = document.getElementById("vap-input-video");
 const vapInputFolder = document.getElementById("vap-input-folder");
 const vapLimitInput = document.getElementById("vap-limit-input");
+const vapFactoryPreset = document.getElementById("vap-factory-preset");
+const vapMaxCandidates = document.getElementById("vap-max-candidates");
+const vapTopRenderCount = document.getElementById("vap-top-render-count");
+const vapStopAfterApproved = document.getElementById("vap-stop-after-approved");
+const vapWhisperModel = document.getElementById("vap-whisper-model");
+const vapFactoryEstimate = document.getElementById("vap-factory-estimate");
 const vapDryRun = document.getElementById("vap-dry-run");
 const vapAutoFix = document.getElementById("vap-auto-fix");
 const vapCopyResults = document.getElementById("vap-copy-results");
@@ -335,6 +429,7 @@ const vapSendMode = document.getElementById("vap-send-mode");
 const vapSendTelegram = document.getElementById("vap-send-telegram");
 const vapKeepFinalOnly = document.getElementById("vap-keep-final-only");
 const vapCleanupDryRun = document.getElementById("vap-cleanup-dry-run");
+const vapConfirmRealRerender = document.getElementById("vap-confirm-real-rerender");
 const vapStatusOutputRoot = document.getElementById("vap-status-output-root");
 const vapStatusLatestJob = document.getElementById("vap-status-latest-job");
 const vapStatusPlatoJob = document.getElementById("vap-status-plato-job");
@@ -363,6 +458,32 @@ const controlRoom = {
   deliveryStatus: document.getElementById("cr-delivery-status"),
   finalTelegram: document.getElementById("cr-final-telegram"),
   finalReason: document.getElementById("cr-final-reason"),
+  criticalBlockers: document.getElementById("cr-critical-blockers"),
+  p0Blockers: document.getElementById("cr-p0-blockers"),
+  p1Blockers: document.getElementById("cr-p1-blockers"),
+  blockerRoute: document.getElementById("cr-blocker-route"),
+  blockerReason: document.getElementById("cr-blocker-reason"),
+  blockerSource: document.getElementById("cr-blocker-source"),
+  blockerItems: document.getElementById("cr-blocker-items"),
+  canAutoFix: document.getElementById("cr-can-auto-fix"),
+  fixResult: document.getElementById("cr-fix-result"),
+  fixAttempted: document.getElementById("cr-fix-attempted"),
+  fixAccepted: document.getElementById("cr-fix-accepted"),
+  blockerFixedOutput: document.getElementById("cr-blocker-fixed-output"),
+  nextAction: document.getElementById("cr-next-action"),
+  queueQueued: document.getElementById("cr-queue-queued"),
+  queuePostedDryRun: document.getElementById("cr-queue-posted-dry-run"),
+  queueFailed: document.getElementById("cr-queue-failed"),
+  queuePosted: document.getElementById("cr-queue-posted"),
+  queueLatest: document.getElementById("cr-queue-latest"),
+  queueLatestResult: document.getElementById("cr-queue-latest-result"),
+  rerenderRequested: document.getElementById("cr-rerender-requested"),
+  rerenderCompleted: document.getElementById("cr-rerender-completed"),
+  rerenderFailed: document.getElementById("cr-rerender-failed"),
+  rerenderLatest: document.getElementById("cr-rerender-latest"),
+  rerenderBlocker: document.getElementById("cr-rerender-blocker"),
+  rerenderChanges: document.getElementById("cr-rerender-changes"),
+  rerenderOutput: document.getElementById("cr-rerender-output"),
 };
 const buttons = {
   fullPipelineRun: document.getElementById("full-pipeline-run"),
@@ -397,6 +518,13 @@ const buttons = {
   openFinalFolder: document.getElementById("open-final-folder"),
   copyFinalPath: document.getElementById("copy-final-path"),
   openDeliverySummary: document.getElementById("open-delivery-summary"),
+  buildInstagramQueue: document.getElementById("build-instagram-queue"),
+  publishInstagramDryRun: document.getElementById("publish-instagram-dry-run"),
+  peekInstagramQueue: document.getElementById("peek-instagram-queue"),
+  vapDryRunRerenderRequest: document.getElementById("vap-dry-run-rerender-request"),
+  fixLatestRerenderRequest: document.getElementById("fix-latest-rerender-request"),
+  importRerenderResult: document.getElementById("import-rerender-result"),
+  processCompletedRerenders: document.getElementById("process-completed-rerenders"),
   watchStart: document.getElementById("watch-start"),
   watchStop: document.getElementById("watch-stop"),
   refresh: document.getElementById("refresh-status"),
@@ -437,14 +565,45 @@ function vapPayload() {
     input_video: vapInputVideo.value.trim(),
     input_folder: vapInputFolder.value.trim(),
     limit: vapLimitInput.value.trim(),
+    factory_preset: vapFactoryPreset.value,
+    max_candidates: vapMaxCandidates.value.trim(),
+    top_render_count: vapTopRenderCount.value.trim(),
+    stop_after_approved: vapStopAfterApproved.value.trim(),
+    whisper_model: vapWhisperModel.value,
     dry_run: vapDryRun.checked,
     auto_fix: vapAutoFix.checked,
     copy_results: vapCopyResults.checked,
     davinci_mode: vapDavinciMode.value,
     send_mode: vapSendMode.value,
     send_telegram: vapSendTelegram.checked,
+    confirm_real_rerender: vapConfirmRealRerender.checked,
     cleanup_mode: vapKeepFinalOnly.checked ? (vapCleanupDryRun.checked ? "dry_run" : "keep_final_only") : "keep_all",
   };
+}
+
+const factoryPresets = {
+  quality: {max: 12, render: 6, approved: 3, whisper: "medium", davinci: "required"},
+  balanced: {max: 8, render: 4, approved: 3, whisper: "medium", davinci: "required"},
+  fast: {max: 3, render: 2, approved: 1, whisper: "small", davinci: "optional"},
+  archive: {max: 0, render: 0, approved: 0, whisper: "large-v3", davinci: "required"},
+};
+
+function updateFactoryEstimate() {
+  const render = Number(vapTopRenderCount.value || 0);
+  const approved = Number(vapStopAfterApproved.value || 0);
+  const renderText = render ? `up to ${render} candidates` : "all candidates";
+  const approvedText = approved ? `stop after ${approved} approved` : "process all approved outputs";
+  vapFactoryEstimate.textContent = `Will render ${renderText}, ${approvedText}.`;
+}
+
+function applyFactoryPreset() {
+  const preset = factoryPresets[vapFactoryPreset.value] || factoryPresets.quality;
+  vapMaxCandidates.value = preset.max;
+  vapTopRenderCount.value = preset.render;
+  vapStopAfterApproved.value = preset.approved;
+  vapWhisperModel.value = preset.whisper;
+  vapDavinciMode.value = preset.davinci;
+  updateFactoryEstimate();
 }
 
 function simpleVapPayload() {
@@ -480,6 +639,13 @@ function setBusy(running) {
   buttons.retryFullPipeline.disabled = running;
   buttons.retryPlatoOnly.disabled = running;
   buttons.retryDeliveryOnly.disabled = running;
+  buttons.buildInstagramQueue.disabled = running;
+  buttons.publishInstagramDryRun.disabled = running;
+  buttons.peekInstagramQueue.disabled = running;
+  buttons.vapDryRunRerenderRequest.disabled = running;
+  buttons.fixLatestRerenderRequest.disabled = running;
+  buttons.importRerenderResult.disabled = running;
+  buttons.processCompletedRerenders.disabled = running;
   buttons.watchStart.disabled = running;
   buttons.dryRun.disabled = running;
 }
@@ -556,6 +722,36 @@ function textOrDash(value) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+function yesNo(value) {
+  return value ? "yes" : "no";
+}
+
+function titleValue(value) {
+  return textOrDash(value).replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function fixResult(finalOutput) {
+  if (finalOutput.blocker_fix_accepted) {
+    return "accepted";
+  }
+  if (finalOutput.blocker_fix_attempted) {
+    return "failed";
+  }
+  if (finalOutput.blocker_route) {
+    return "skipped";
+  }
+  return "-";
+}
+
+function renderList(element, items) {
+  element.innerHTML = "";
+  (items || []).forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    element.appendChild(li);
+  });
+}
+
 function formatSeconds(value) {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -580,6 +776,10 @@ function renderControlRoom(control) {
   const bar = control.status_bar || {};
   const run = control.current_run || {};
   const finalOutput = control.final_output || {};
+  const explanation = finalOutput.explanation || {};
+  const decision = explanation.decision || {};
+  const blockers = explanation.blockers || {};
+  const fix = explanation.fix_recommendation || {};
   controlRoom.vap.textContent = textOrDash(bar.videoautopipeline);
   controlRoom.plato.textContent = textOrDash(bar.plato);
   controlRoom.telegram.textContent = textOrDash(bar.telegram);
@@ -596,18 +796,51 @@ function renderControlRoom(control) {
   controlRoom.finalMessage.textContent = finalOutput.message || "";
   controlRoom.approvedOutput.textContent = textOrDash(finalOutput.approved_output_path);
   controlRoom.sourceFinal.textContent = textOrDash(finalOutput.source_final_path);
-  controlRoom.platoScore.textContent = textOrDash(finalOutput.plato_score);
-  controlRoom.platoVerdict.textContent = textOrDash(finalOutput.plato_verdict);
-  controlRoom.platoBucket.textContent = textOrDash(finalOutput.plato_bucket);
-  controlRoom.deliveryStatus.textContent = textOrDash(finalOutput.delivery_status);
+  controlRoom.platoScore.textContent = textOrDash(finalOutput.plato_score || decision.score);
+  controlRoom.platoVerdict.textContent = textOrDash(finalOutput.plato_verdict || decision.verdict);
+  controlRoom.platoBucket.textContent = textOrDash(finalOutput.plato_bucket || decision.bucket);
+  controlRoom.deliveryStatus.textContent = textOrDash(finalOutput.delivery_status || decision.delivery_status);
   controlRoom.finalTelegram.textContent = textOrDash(finalOutput.telegram_status);
   controlRoom.finalReason.textContent = textOrDash(finalOutput.reason);
+  controlRoom.criticalBlockers.textContent = blockers.critical ?? 0;
+  controlRoom.p0Blockers.textContent = blockers.p0 ?? 0;
+  controlRoom.p1Blockers.textContent = blockers.p1 ?? 0;
+  controlRoom.blockerRoute.textContent = titleValue(finalOutput.blocker_route);
+  controlRoom.blockerReason.textContent = textOrDash(blockers.reason);
+  controlRoom.blockerSource.textContent = textOrDash(blockers.source_field);
+  renderList(controlRoom.blockerItems, blockers.items);
+  controlRoom.canAutoFix.textContent = yesNo(finalOutput.blocker_route === "plato_fix" || fix.can_auto_fix);
+  controlRoom.fixResult.textContent = titleValue(fixResult(finalOutput));
+  controlRoom.fixAttempted.textContent = yesNo(finalOutput.blocker_fix_attempted || fix.fix_attempted);
+  controlRoom.fixAccepted.textContent = yesNo(finalOutput.blocker_fix_accepted || fix.fix_accepted);
+  controlRoom.blockerFixedOutput.textContent = textOrDash(finalOutput.blocker_fixed_output_path);
+  controlRoom.nextAction.textContent = textOrDash(finalOutput.blocker_next_action || fix.suggested_next_action);
   buttons.openFinalFolder.dataset.path = finalOutput.approved_output_path || "";
   buttons.copyFinalPath.dataset.path = finalOutput.approved_output_path || "";
   buttons.openDeliverySummary.dataset.path = finalOutput.delivery_summary_path || "";
   buttons.openFinalFolder.disabled = !finalOutput.approved_output_path;
   buttons.copyFinalPath.disabled = !finalOutput.approved_output_path;
   buttons.openDeliverySummary.disabled = !finalOutput.delivery_summary_path;
+  const instagramQueue = control.instagram_queue || {};
+  const queueCounts = instagramQueue.counts || {};
+  const latestQueueItem = instagramQueue.latest || {};
+  const latestPublishResult = instagramQueue.latest_publish_result || {};
+  controlRoom.queueQueued.textContent = queueCounts.queued ?? 0;
+  controlRoom.queuePostedDryRun.textContent = queueCounts.posted_dry_run ?? 0;
+  controlRoom.queueFailed.textContent = queueCounts.failed ?? 0;
+  controlRoom.queuePosted.textContent = queueCounts.posted ?? 0;
+  controlRoom.queueLatest.textContent = latestQueueItem.approved_output_path || "-";
+  controlRoom.queueLatestResult.textContent = latestPublishResult.reason || latestPublishResult.status || "-";
+  const rerender = control.rerender_requests || {};
+  const rerenderCounts = rerender.counts || {};
+  const latestRerender = rerender.latest || {};
+  controlRoom.rerenderRequested.textContent = rerenderCounts.requested ?? 0;
+  controlRoom.rerenderCompleted.textContent = rerenderCounts.completed ?? 0;
+  controlRoom.rerenderFailed.textContent = rerenderCounts.failed ?? 0;
+  controlRoom.rerenderLatest.textContent = latestRerender.request_id || "-";
+  controlRoom.rerenderBlocker.textContent = textOrDash(latestRerender.blocker_type);
+  controlRoom.rerenderChanges.textContent = (latestRerender.requested_changes || []).join(", ") || "-";
+  controlRoom.rerenderOutput.textContent = textOrDash(latestRerender.rerendered_output_path);
 }
 
 function renderJobHistory(rows) {
@@ -824,6 +1057,47 @@ buttons.openDeliverySummary.addEventListener("click", () => {
     window.open(pathToFileUrl(path), "_blank");
   }
 });
+buttons.buildInstagramQueue.addEventListener("click", async () => {
+  const payload = await postJson("/api/operator/build-instagram-queue", {force: false});
+  payload.message = payload.message || `Queue build: queued ${payload.queued || 0}, skipped ${payload.skipped || 0}.`;
+  showActionResult(payload);
+  refreshStatus();
+});
+buttons.publishInstagramDryRun.addEventListener("click", async () => {
+  const payload = await postJson("/api/operator/instagram-publish-next-dry-run", {});
+  payload.message = payload.reason || payload.status || "Instagram dry-run complete.";
+  showActionResult(payload);
+  refreshStatus();
+});
+buttons.peekInstagramQueue.addEventListener("click", async () => {
+  const payload = await fetch("/api/operator/instagram-queue-next").then((response) => response.json());
+  const item = payload.item || {};
+  payload.message = item.approved_output_path || payload.reason || "No queued item.";
+  showActionResult(payload);
+});
+buttons.vapDryRunRerenderRequest.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  showActionResult(await postJson("/api/operator/vap-dry-run-rerender-request", payload));
+  refreshStatus();
+});
+buttons.fixLatestRerenderRequest.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  payload.confirm_real_rerender = vapConfirmRealRerender.checked;
+  showActionResult(await postJson("/api/operator/fix-latest-rerender-request", payload));
+  refreshStatus();
+});
+buttons.importRerenderResult.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  showActionResult(await postJson("/api/operator/import-rerender-result", payload));
+  refreshStatus();
+});
+buttons.processCompletedRerenders.addEventListener("click", async () => {
+  const payload = simpleVapPayload();
+  payload.dry_run = true;
+  payload.send_telegram = false;
+  showActionResult(await postJson("/api/operator/process-completed-rerenders", payload));
+  refreshStatus();
+});
 buttons.watchStart.addEventListener("click", async () => {
   showActionResult(await postJson("/api/operator/watch/start", folderPayload()));
   refreshStatus();
@@ -833,7 +1107,11 @@ buttons.watchStop.addEventListener("click", async () => {
   refreshStatus();
 });
 buttons.refresh.addEventListener("click", refreshStatus);
+vapFactoryPreset.addEventListener("change", applyFactoryPreset);
+vapTopRenderCount.addEventListener("input", updateFactoryEstimate);
+vapStopAfterApproved.addEventListener("input", updateFactoryEstimate);
 
+updateFactoryEstimate();
 refreshStatus();
 setInterval(refreshStatus, 3000);
 </script>
