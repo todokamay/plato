@@ -133,7 +133,10 @@ def _issues_for(row: dict, prefix: str) -> list:
     issues = []
     issues.extend({"priority": "P0"} for _ in range(_as_int(row.get(f"P0_{prefix}"))))
     issues.extend({"priority": "P1"} for _ in range(_as_int(row.get(f"P1_{prefix}"))))
-    if row.get("critical_issue_count"):
+    critical = max(_as_int(row.get(f"critical_{prefix}")), _as_int(row.get(f"critical_{prefix}_count")))
+    if not critical and prefix == "before":
+        critical = _as_int(row.get("critical_issue_count"))
+    if critical:
         issues.append({"severity": "critical"})
     return issues
 

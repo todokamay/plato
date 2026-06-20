@@ -118,6 +118,38 @@ def test_accepted_fixed_output_selected_for_telegram():
         shutil.rmtree(fixed.parent, ignore_errors=True)
 
 
+def test_accepted_fixed_output_wins_when_original_safe_to_test_was_blocked():
+    fixed = root() / "fixed.mp4"
+    try:
+        fixed.write_bytes(b"fixed")
+        row, sent, _final = run_with_payload({
+            "clips": [{
+                "filename": "clip.mp4",
+                "final_bucket": "rejected",
+                "fix_accepted": True,
+                "fixed_path": str(fixed),
+                "auto_fix_attempted": True,
+                "original_adjusted_score": 69.2,
+                "original_final_verdict": "SAFE TO TEST",
+                "critical_issue_count": 1,
+                "P0_before": 1,
+                "fixed_adjusted_score": 78.6,
+                "fixed_final_verdict": "SAFE TO TEST",
+                "P0_after": 0,
+                "P1_after": 0,
+                "fix_acceptance_reason": "score improved and no new P0/P1",
+            }]
+        })
+        assert row["improvement_status"] == "accepted"
+        assert row["reanalysis_status"] == "succeeded"
+        assert row["reanalysis_verdict"] == "SAFE TO TEST"
+        assert row["approved_output_path"] == str(fixed)
+        assert row["delivery_status"] == "approved"
+        assert sent == []
+    finally:
+        shutil.rmtree(fixed.parent, ignore_errors=True)
+
+
 def test_original_can_send_only_if_publishable():
     row, sent, final = run_with_payload({
         "clips": [{
@@ -224,6 +256,7 @@ def test_delivery_qc_targets_selected_final_when_folder_has_multiple_mp4s():
 def main():
     test_dry_run_writes_summary_and_preserves_source()
     test_accepted_fixed_output_selected_for_telegram()
+    test_accepted_fixed_output_wins_when_original_safe_to_test_was_blocked()
     test_original_can_send_only_if_publishable()
     test_rejected_or_empty_approved_path_is_not_sent()
     test_missing_telegram_env_skips_cleanly()
